@@ -62,3 +62,67 @@ fn apply_twice_with_no_changes_is_a_noop() {
         "unchanged file must not be rewritten on a second apply"
     );
 }
+
+#[test]
+fn apply_to_fresh_path_logs_created_with_no_backup() {
+    let source = temp_dir("apply-source-fresh");
+    let target = temp_dir("apply-target-fresh");
+
+    fs::write(source.join("newfile"), b"fresh content\n").unwrap();
+
+    run_apply(&source, &target);
+
+    assert_eq!(fs::read(target.join("newfile")).unwrap(), b"fresh content\n");
+
+    let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
+    assert_eq!(log_text, "created\tnewfile\n");
+    assert!(!target.join(".mysh/backups/newfile").exists());
+}
+
+#[test]
+fn apply_to_pre_existing_path_backs_up_and_logs_overwritten() {
+    let source = temp_dir("apply-source-preexisting");
+    let target = temp_dir("apply-target-preexisting");
+
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("gitconfig"), b"old, not-yet-managed content\n").unwrap();
+    fs::write(source.join("gitconfig"), b"[user]\n\tname = Test\n").unwrap();
+
+    run_apply(&source, &target);
+
+    assert_eq!(
+        fs::read(target.join("gitconfig")).unwrap(),
+        b"[user]\n\tname = Test\n"
+    );
+
+    let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
+    assert_eq!(log_text, "overwritten\tgitconfig\t.mysh/backups/gitconfig\n");
+    assert_eq!(
+        fs::read(target.join(".mysh/backups/gitconfig")).unwrap(),
+        b"old, not-yet-managed content\n"
+    );
+}
+
+#[test]
+fn reapplying_an_already_managed_path_does_not_retrigger_backup() {
+    let source = temp_dir("apply-source-reapply");
+    let target = temp_dir("apply-target-reapply");
+
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("gitconfig"), b"old, not-yet-managed content\n").unwrap();
+    fs::write(source.join("gitconfig"), b"[user]\n\tname = Test\n").unwrap();
+
+    run_apply(&source, &target);
+    run_apply(&source, &target);
+
+    // Logged exactly once, still classified as overwritten (not re-classified as
+    // created on the second pass).
+    let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
+    assert_eq!(log_text, "overwritten\tgitconfig\t.mysh/backups/gitconfig\n");
+
+    // Backup still holds the original pre-mysh content, untouched by the second apply.
+    assert_eq!(
+        fs::read(target.join(".mysh/backups/gitconfig")).unwrap(),
+        b"old, not-yet-managed content\n"
+    );
+}
