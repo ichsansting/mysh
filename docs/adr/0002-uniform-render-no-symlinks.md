@@ -1,0 +1,3 @@
+# Every managed file goes through a uniform render step — no symlinks
+
+The common dotfile-manager approach is to symlink the live file straight into the repo, so edits are automatically "in sync" with no separate apply step. We rejected this: Secrets and Fragments can never be plain symlinks (a Secret must be decrypted first; a Fragment-composed Target must be concatenated from multiple files), so a symlink-for-plain-files approach would mean two different mental models depending on file type. mysh instead always copies/renders Source into Target through the same Apply step, even for plain 1:1 files — trading away free real-time sync for plain files in exchange for Diff/Save/Reset behaving identically across every file type.

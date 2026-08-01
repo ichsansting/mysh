@@ -1,0 +1,3 @@
+# Custom Rust CLI instead of adopting an existing dotfile manager
+
+Existing tools (chezmoi, yadm, Nix home-manager, dotbot) each solve part of what mysh needs, but none combine git-native storage/diff, whole-folder tracking, fragment+secret composition, and a total, clean Teardown, in one tool with a minimal, uniform dependency floor across Linux and macOS. We chose to build a small custom static Rust binary that orchestrates `git` and `mise` rather than adopt one of the above. Cost: more code to own than adopting an existing tool. Benefit: no compromise on any requirement, and no per-tool dependency floor that varies across platforms.
