@@ -16,6 +16,40 @@ enum Entry {
     Overwritten,
 }
 
+/// One raw entry from the Application Log, corresponding 1:1 to a `record_*` write.
+/// `teardown` replays these in reverse to undo everything mysh has done to a device.
+/// Paths on `Created`/`Overwritten` are relative to `target` (as written by
+/// `record_created`/`record_overwritten`); paths on `MiseBootstrapped`/
+/// `BootstrapInstalled`/`BootstrapPathAdded.rc_file` are already absolute (as written
+/// by `record_mise_bootstrapped` and by `bootstrap.sh` itself).
+#[derive(Debug, PartialEq)]
+pub enum LogEntry {
+    Created(PathBuf),
+    Overwritten { relative: PathBuf, backup: PathBuf },
+    MiseBootstrapped(PathBuf),
+    PackageInstalled(String),
+    BootstrapInstalled(PathBuf),
+    BootstrapPathAdded { rc_file: PathBuf, path_line: String },
+}
+
+fn parse_entry(line: &str) -> Option<LogEntry> {
+    let fields: Vec<&str> = line.split('\t').collect();
+    match fields.as_slice() {
+        ["created", relative] => Some(LogEntry::Created(PathBuf::from(relative))),
+        ["overwritten", relative, backup] => {
+            Some(LogEntry::Overwritten { relative: PathBuf::from(relative), backup: PathBuf::from(backup) })
+        }
+        ["mise-bootstrapped", path] => Some(LogEntry::MiseBootstrapped(PathBuf::from(path))),
+        ["package-installed", specifier] => Some(LogEntry::PackageInstalled(specifier.to_string())),
+        ["bootstrap-installed", path] => Some(LogEntry::BootstrapInstalled(PathBuf::from(path))),
+        ["bootstrap-path-added", rc_file, path_line] => Some(LogEntry::BootstrapPathAdded {
+            rc_file: PathBuf::from(rc_file),
+            path_line: path_line.to_string(),
+        }),
+        _ => None,
+    }
+}
+
 impl AppLog {
     pub fn open(target: &Path) -> AppLog {
         AppLog { target: target.to_path_buf() }
@@ -86,6 +120,20 @@ impl AppLog {
         self.append(&format!("package-installed\t{specifier}\n"))
     }
 
+    /// Every entry ever recorded, in the order they were appended — what `teardown`
+    /// replays. A missing log (mysh never touched this device) is an empty list, not
+    /// an error, mirroring every other read in this module. Unrecognized lines are
+    /// skipped rather than erroring, the same forward-compatible tolerance `entry()`
+    /// already has for unknown `kind`s.
+    pub fn entries(&self) -> io::Result<Vec<LogEntry>> {
+        let text = match fs::read_to_string(self.log_path()) {
+            Ok(t) => t,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        Ok(text.lines().filter_map(parse_entry).collect())
+    }
+
     fn append(&self, line: &str) -> io::Result<()> {
         fs::create_dir_all(self.state_dir())?;
         fs::OpenOptions::new()
@@ -93,5 +141,73 @@ impl AppLog {
             .append(true)
             .open(self.log_path())?
             .write_all(line.as_bytes())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_entry_covers_every_recorded_kind() {
+        assert_eq!(parse_entry("created\tbashrc"), Some(LogEntry::Created(PathBuf::from("bashrc"))));
+        assert_eq!(
+            parse_entry("overwritten\tbashrc\t.mysh/backups/bashrc"),
+            Some(LogEntry::Overwritten {
+                relative: PathBuf::from("bashrc"),
+                backup: PathBuf::from(".mysh/backups/bashrc"),
+            })
+        );
+        assert_eq!(
+            parse_entry("mise-bootstrapped\t/home/u/.mysh/bin/mise"),
+            Some(LogEntry::MiseBootstrapped(PathBuf::from("/home/u/.mysh/bin/mise")))
+        );
+        assert_eq!(
+            parse_entry("package-installed\twidget@1.0"),
+            Some(LogEntry::PackageInstalled("widget@1.0".to_string()))
+        );
+        assert_eq!(
+            parse_entry("bootstrap-installed\t/home/u/.mysh/bin/mysh"),
+            Some(LogEntry::BootstrapInstalled(PathBuf::from("/home/u/.mysh/bin/mysh")))
+        );
+        assert_eq!(
+            parse_entry("bootstrap-path-added\t/home/u/.bashrc\texport PATH=\"x:$PATH\""),
+            Some(LogEntry::BootstrapPathAdded {
+                rc_file: PathBuf::from("/home/u/.bashrc"),
+                path_line: "export PATH=\"x:$PATH\"".to_string(),
+            })
+        );
+        assert_eq!(parse_entry("garbage"), None);
+    }
+
+    #[test]
+    fn entries_returns_empty_when_log_is_absent() {
+        let dir = std::env::temp_dir().join(format!("mysh-log-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        assert_eq!(AppLog::open(&dir).entries().unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn entries_round_trips_every_record_method_in_append_order() {
+        let dir = std::env::temp_dir().join(format!("mysh-log-test-roundtrip-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let log = AppLog::open(&dir);
+        log.record_created(Path::new("bashrc")).unwrap();
+        log.record_overwritten(Path::new("gitconfig"), Path::new(".mysh/backups/gitconfig")).unwrap();
+        log.record_mise_bootstrapped(Path::new("/home/u/.mysh/bin/mise")).unwrap();
+        log.record_package_installed("widget@1.0").unwrap();
+
+        assert_eq!(
+            log.entries().unwrap(),
+            vec![
+                LogEntry::Created(PathBuf::from("bashrc")),
+                LogEntry::Overwritten {
+                    relative: PathBuf::from("gitconfig"),
+                    backup: PathBuf::from(".mysh/backups/gitconfig"),
+                },
+                LogEntry::MiseBootstrapped(PathBuf::from("/home/u/.mysh/bin/mise")),
+                LogEntry::PackageInstalled("widget@1.0".to_string()),
+            ]
+        );
     }
 }

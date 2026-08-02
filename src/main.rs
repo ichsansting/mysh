@@ -4,13 +4,14 @@ use mysh::diff;
 use mysh::reset;
 use mysh::save;
 use mysh::secret;
+use mysh::teardown;
 use std::io;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let Some(command) = args.get(1) else {
-        eprintln!("usage: mysh <apply|diff|save|reset> [--source-dir DIR] [--target-dir DIR] [--remote-url URL] [--passphrase PASS]");
+        eprintln!("usage: mysh <apply|diff|save|reset|teardown> [--source-dir DIR] [--target-dir DIR] [--remote-url URL] [--passphrase PASS]");
         return ExitCode::FAILURE;
     };
 
@@ -79,6 +80,26 @@ fn main() -> ExitCode {
                 let mut input = stdin.lock();
                 let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
                 match reset::reset(&config.source_dir, &config.target_dir, &mut input, &mut get_passphrase) {
+                    Ok(msg) => {
+                        print!("{msg}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::FAILURE
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        },
+        "teardown" => match Config::resolve_target_dir(rest) {
+            Ok(target_dir) => {
+                let stdin = io::stdin();
+                let mut input = stdin.lock();
+                match teardown::teardown(&target_dir, &mut input) {
                     Ok(msg) => {
                         print!("{msg}");
                         ExitCode::SUCCESS

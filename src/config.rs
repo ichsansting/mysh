@@ -46,6 +46,18 @@ impl Config {
             passphrase,
         })
     }
+
+    /// Like `resolve`, but only requires `TARGET_DIR`. `teardown` never touches
+    /// `Source` (everything it needs comes from the Application Log under `Target`),
+    /// so forcing a `--source-dir` on it the way every other command needs would be a
+    /// pointless UX tax.
+    pub fn resolve_target_dir(args: &[String]) -> Result<PathBuf, String> {
+        let flags = parse_flags(args)?;
+        resolve_var(flags.target_dir, "MYSH_TARGET_DIR")
+            .or_else(|| env::var("HOME").ok())
+            .map(PathBuf::from)
+            .ok_or_else(|| "TARGET_DIR must be set via --target-dir, MYSH_TARGET_DIR, or $HOME".to_string())
+    }
 }
 
 fn parse_flags(args: &[String]) -> Result<Flags, String> {
@@ -106,5 +118,14 @@ mod tests {
         assert_eq!(config.source_dir, PathBuf::from("/from/flag"));
 
         unsafe { env::remove_var("MYSH_SOURCE_DIR") };
+    }
+
+    #[test]
+    fn resolve_target_dir_never_requires_source_dir() {
+        unsafe { env::remove_var("MYSH_TARGET_DIR") };
+
+        let args = vec!["--target-dir".to_string(), "/from/flag".to_string()];
+        let target_dir = Config::resolve_target_dir(&args).unwrap();
+        assert_eq!(target_dir, PathBuf::from("/from/flag"));
     }
 }

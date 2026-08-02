@@ -10,3 +10,4 @@ pub mod package;
 pub mod reset;
 pub mod save;
 pub mod secret;
+pub mod teardown;
