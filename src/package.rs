@@ -72,20 +72,73 @@ fn default_bin_name(specifier: &str) -> String {
     rest.rsplit('/').next().unwrap_or(rest).to_string()
 }
 
-/// Installs every eager package declared in `source`'s `.packages` file, self-bootstrapping
-/// `mise` first if it isn't already present. A no-op when no eager packages are declared —
-/// `apply` never touches `mise` for a device with nothing eager to install.
-pub fn install_eager(source: &Path, target: &Path, log: &AppLog) -> Result<(), String> {
-    let eager: Vec<Package> = load(source)?.into_iter().filter(|p| p.eager).collect();
-    if eager.is_empty() {
+/// Installs every eager package and generates a shim for every lazy package declared in
+/// `source`'s `.packages` file, self-bootstrapping `mise` first if it isn't already
+/// present. A no-op — `mise` is never touched — only when no packages of either kind are
+/// declared at all: a lazy-only device still resolves/bootstraps `mise` up front (without
+/// installing the lazy tools themselves) so each generated shim has a concrete `mise` to
+/// invoke on first real use, rather than hoping one turns up on `PATH` later.
+pub fn apply(source: &Path, target: &Path, log: &AppLog) -> Result<(), String> {
+    let packages = load(source)?;
+    if packages.is_empty() {
         return Ok(());
     }
     let mise_bin = mise::ensure_installed(target, log)?;
-    for package in &eager {
+
+    for package in packages.iter().filter(|p| p.eager) {
         mise::install(&mise_bin, target, &package.specifier)?;
         log.record_package_installed(&package.specifier).map_err(|e| e.to_string())?;
     }
+
+    let lazy: Vec<&Package> = packages.iter().filter(|p| !p.eager).collect();
+    if !lazy.is_empty() {
+        let bin_dir = mise::bin_dir(target);
+        fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
+        for package in lazy {
+            let shim = shim_script(&mise_bin, target, &package.specifier, &package.bin_name);
+            write_if_changed_executable(&bin_dir.join(&package.bin_name), &shim)
+                .map_err(|e| e.to_string())?;
+        }
+    }
     Ok(())
+}
+
+/// A lazy package's shim: installs (on first use) and execs the real tool via
+/// `mise x <specifier> -- <bin_name> "$@"`, using the exact `mise` binary `apply` already
+/// resolved (bare `mise` when system-wide, so future `PATH` lookups keep working; an
+/// absolute owned path when mysh bootstrapped it, so the shim doesn't depend on that path
+/// being on `PATH` by the time it's actually run) and scoped to the same isolated
+/// `MISE_DATA_DIR` eager installs use.
+fn shim_script(mise_bin: &Path, target: &Path, specifier: &str, bin_name: &str) -> String {
+    format!(
+        "#!/bin/sh\nexport MISE_DATA_DIR=\"{}\"\nexec \"{}\" x {specifier} -- {bin_name} \"$@\"\n",
+        mise::data_dir(target).display(),
+        mise_bin.display(),
+    )
+}
+
+/// Writes an executable file at `path`, matching the idempotence every other render path
+/// in this codebase already has (`apply::write_if_changed`, `secret::write_restricted`):
+/// a no-op when `content` already matches what's on disk.
+#[cfg(unix)]
+fn write_if_changed_executable(path: &Path, content: &str) -> io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    if fs::read_to_string(path).map(|existing| existing == content).unwrap_or(false) {
+        return Ok(());
+    }
+    fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o755)
+        .open(path)?
+        .write_all(content.as_bytes())
+}
+
+#[cfg(not(unix))]
+fn write_if_changed_executable(path: &Path, content: &str) -> io::Result<()> {
+    fs::write(path, content)
 }
 
 #[cfg(test)]
@@ -124,5 +177,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mysh-package-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(load(&dir).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn shim_script_execs_the_resolved_mise_bin_scoped_to_the_isolated_data_dir() {
+        let target = Path::new("/home/user");
+        let mise_bin = Path::new("/home/user/.mysh/bin/mise");
+        let script = shim_script(mise_bin, target, "widget@1.0", "widget");
+        assert!(script.starts_with("#!/bin/sh\n"));
+        assert!(script.contains("MISE_DATA_DIR=\"/home/user/.mysh/mise\""));
+        assert!(script.contains("exec \"/home/user/.mysh/bin/mise\" x widget@1.0 -- widget \"$@\"\n"));
     }
 }

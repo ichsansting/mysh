@@ -56,7 +56,7 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
         })?;
     }
 
-    package::install_eager(source, target, &log)?;
+    package::apply(source, target, &log)?;
     Ok(())
 }
 

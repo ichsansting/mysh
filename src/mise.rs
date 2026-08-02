@@ -14,9 +14,16 @@ fn system_mise_present() -> bool {
     Command::new("mise").arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
 }
 
+/// mysh's isolated, `PATH`-resident prefix: where its own bootstrapped `mise` binary
+/// lives, and where lazy-package shims (see `package::apply`) are generated so invoking
+/// a lazy tool's plain command name resolves to its shim.
+pub fn bin_dir(target: &Path) -> PathBuf {
+    target.join(".mysh/bin")
+}
+
 /// Where mysh's own bootstrap installs `mise`, if no system-wide copy is found.
 fn owned_mise_bin(target: &Path) -> PathBuf {
-    target.join(".mysh/bin/mise")
+    bin_dir(target).join("mise")
 }
 
 /// The already-usable `mise` binary, if one exists: a pre-existing system-wide `mise`

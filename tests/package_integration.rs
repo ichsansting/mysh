@@ -58,6 +58,19 @@ echo ran-$name
 BIN
     chmod +x "{stub}/$name"
     ;;
+  x)
+    shift
+    specifier="$1"; shift
+    shift # drop --
+    bin_name="$1"; shift
+    # Real `mise x` only installs on the first invocation of a given tool@version;
+    # a marker file stands in for that already-installed check here.
+    if [ ! -f "{stub}/$bin_name.installed" ]; then
+      touch "{stub}/$bin_name.installed"
+      echo "installed $specifier" >> "{stub}/mise.calls"
+    fi
+    echo "ran-$bin_name $*"
+    ;;
 esac
 exit 0
 "#,
@@ -149,18 +162,52 @@ fn second_apply_reuses_bootstrapped_mise_without_reinvoking_installer() {
 }
 
 #[test]
-fn apply_does_not_touch_mise_when_no_eager_packages_are_declared() {
+fn apply_does_not_touch_mise_when_no_packages_are_declared() {
     let source = temp_dir("package-source-none");
     let target = temp_dir("package-target-none");
     let stub_dir = temp_dir("package-stub-none");
-    // No `curl`/`mise` stub at all: if apply tried to touch mise, the real (absent from
-    // this PATH) binary would fail to spawn and the command would error out.
-
-    fs::write(source.join(".packages"), "widget@1.0\tlazy\n").unwrap();
+    // No `.packages` file at all, and no `curl`/`mise` stub: if apply tried to touch
+    // mise, the real (absent from this PATH) binary would fail to spawn and the command
+    // would error out.
 
     let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(!target.join(".mysh/log").exists());
+}
+
+#[test]
+fn apply_bootstraps_mise_for_a_lazy_only_device_so_the_shim_has_something_to_invoke() {
+    let source = temp_dir("package-source-lazy-bootstrap");
+    let target = temp_dir("package-target-lazy-bootstrap");
+    let stub_dir = temp_dir("package-stub-lazy-bootstrap");
+
+    fs::write(source.join(".packages"), "widget@1.0\tlazy\n").unwrap();
+    write_fake_curl(&stub_dir);
+
+    let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    let expected_mise_path = target.join(".mysh/bin/mise");
+    assert!(
+        expected_mise_path.exists(),
+        "a lazy-only device must still bootstrap mise, or its shim would fail with \
+         `mise: command not found` on first real invocation"
+    );
+    let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
+    assert!(
+        log_text.contains(&format!("mise-bootstrapped\t{}\n", expected_mise_path.display())),
+        "log was: {log_text:?}"
+    );
+    // Lazy packages are never installed during apply itself, only bootstrapped-for-later.
+    assert!(!log_text.contains("package-installed"), "log was: {log_text:?}");
+
+    // The shim must embed the exact resolved mise bin, not a bare `mise` that depends on
+    // `.mysh/bin` already being on `PATH` by the time the shim actually runs.
+    let shim_text = fs::read_to_string(target.join(".mysh/bin/widget")).unwrap();
+    assert!(
+        shim_text.contains(&format!("exec \"{}\"", expected_mise_path.display())),
+        "shim was: {shim_text:?}"
+    );
 }
 
 #[test]
@@ -195,12 +242,67 @@ fn apply_installs_eager_package_via_mise_and_it_is_runnable() {
 fn dot_packages_file_is_never_rendered_to_target() {
     let source = temp_dir("package-source-not-rendered");
     let target = temp_dir("package-target-not-rendered");
+    let stub_dir = temp_dir("package-stub-not-rendered");
 
     fs::write(source.join(".packages"), "widget@1.0\tlazy\n").unwrap();
+    write_fake_mise(&stub_dir);
 
-    let output = run_apply(&source, &target, &std::env::var("PATH").unwrap());
+    let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(!target.join(".packages").exists());
+}
+
+#[test]
+fn lazy_shim_is_generated_and_installs_then_execs_on_first_invocation() {
+    let source = temp_dir("package-source-lazy");
+    let target = temp_dir("package-target-lazy");
+    let stub_dir = temp_dir("package-stub-lazy");
+
+    fs::write(source.join(".packages"), "widget@1.0\tlazy\telio-cli\n").unwrap();
+
+    // A stubbed, already-installed `mise` on `PATH` at apply time (the resolved-and-
+    // bootstrapped case is covered separately by
+    // `apply_bootstraps_mise_for_a_lazy_only_device_so_the_shim_has_something_to_invoke`).
+    write_fake_mise(&stub_dir);
+    let path_env = stub_path_env(&stub_dir);
+
+    let output = run_apply(&source, &target, &path_env);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    let shim = target.join(".mysh/bin/elio-cli");
+    assert!(shim.exists(), "a shim must be generated at the lazy package's bin name");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&shim).unwrap().permissions().mode();
+        assert_eq!(mode & 0o111, 0o111, "shim must be executable");
+    }
+
+    // Lazy packages are never installed during apply itself.
+    let mise_calls_after_apply = fs::read_to_string(stub_dir.join("mise.calls")).unwrap_or_default();
+    assert!(
+        !mise_calls_after_apply.contains("install widget"),
+        "lazy package must not be installed during apply: {mise_calls_after_apply:?}"
+    );
+
+    let first = Command::new(&shim).env("PATH", &path_env).arg("--flag").output().unwrap();
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    assert_eq!(String::from_utf8_lossy(&first.stdout).trim(), "ran-elio-cli --flag");
+
+    let second = Command::new(&shim).env("PATH", &path_env).arg("--flag").output().unwrap();
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+    assert_eq!(String::from_utf8_lossy(&second.stdout).trim(), "ran-elio-cli --flag");
+
+    let mise_calls = fs::read_to_string(stub_dir.join("mise.calls")).unwrap();
+    assert!(
+        mise_calls.contains("x widget@1.0 -- elio-cli --flag"),
+        "shim must call `mise x <specifier> -- <bin_name> \"$@\"`, calls were: {mise_calls:?}"
+    );
+    assert_eq!(
+        mise_calls.matches("installed widget@1.0").count(),
+        1,
+        "second invocation must reuse the already-installed tool, not re-trigger install: {mise_calls:?}"
+    );
 }
 
 #[test]
