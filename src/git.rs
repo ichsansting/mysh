@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Thin subprocess wrapper around the real `git` binary, discovered via PATH
@@ -46,4 +46,41 @@ pub fn commit(repo_dir: &Path, message: &str) -> Result<(), String> {
 /// Pushes the current branch to its configured remote.
 pub fn push(repo_dir: &Path) -> Result<(), String> {
     run(repo_dir, &["push"]).map(|_| ())
+}
+
+/// The current branch's upstream ref (e.g. `origin/main`), representing `Remote`.
+pub fn upstream_ref(repo_dir: &Path) -> Result<String, String> {
+    run(
+        repo_dir,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .map(|s| s.trim().to_string())
+}
+
+/// Relative paths tracked in `rev`'s tree.
+pub fn list_tree(repo_dir: &Path, rev: &str) -> Result<Vec<PathBuf>, String> {
+    Ok(run(repo_dir, &["ls-tree", "-r", "--name-only", rev])?
+        .lines()
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// `relative_path`'s content at `rev`, or `None` if it doesn't exist there.
+pub fn show(repo_dir: &Path, rev: &str, relative_path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let spec = format!("{rev}:{}", relative_path.to_string_lossy());
+    let output = Command::new("git")
+        .current_dir(repo_dir)
+        .args(["show", &spec])
+        .output()
+        .map_err(|e| format!("failed to run git show {spec}: {e}"))?;
+
+    if output.status.success() {
+        return Ok(Some(output.stdout));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("does not exist") || stderr.contains("exists on disk, but not") {
+        Ok(None)
+    } else {
+        Err(format!("git show {spec} failed: {stderr}"))
+    }
 }

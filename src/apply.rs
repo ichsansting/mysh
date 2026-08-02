@@ -58,7 +58,9 @@ fn back_up(
     Ok(backup_relative)
 }
 
-fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+/// Recursively lists files under `dir`, skipping `.git` (shared with `diff`, which
+/// also needs the set of plain files Source currently has on disk).
+pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
