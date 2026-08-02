@@ -58,8 +58,16 @@ fn back_up(
     Ok(backup_relative)
 }
 
-/// Recursively lists files under `dir`, skipping `.git` (shared with `diff`, which
-/// also needs the set of plain files Source currently has on disk).
+/// Whether `name` is one of mysh's own internal directories (`.git`, the Source
+/// working tree's VCS dir; `.mysh`, mysh's state dir under Target) — never user
+/// content, so never walked by `walk_files` or `diff`'s directory-mode tracking.
+pub(crate) fn is_internal_dir_name(name: Option<&str>) -> bool {
+    matches!(name, Some(".git") | Some(".mysh"))
+}
+
+/// Recursively lists files under `dir`, skipping `.git` and `.mysh` (shared with
+/// `diff`, which also needs the set of plain files Source/Target currently have on
+/// disk).
 pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -67,7 +75,7 @@ pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            if path.file_name().and_then(|n| n.to_str()) == Some(".git") {
+            if is_internal_dir_name(path.file_name().and_then(|n| n.to_str())) {
                 continue;
             }
             files.extend(walk_files(&path)?);

@@ -133,6 +133,87 @@ fn reports_remote_drift_for_a_file_only_on_remote() {
 }
 
 #[test]
+fn track_marked_directory_flags_new_file_in_target_only() {
+    let remote = init_bare_remote();
+    let remote_url = format!("file://{}", remote.to_string_lossy());
+    push_from_another_device(&remote_url, "plugins/.track", b"");
+
+    let source = temp_dir("diff-source-track-new");
+    git::clone(&remote_url, &source).unwrap();
+
+    let target = temp_dir("diff-target-track-new");
+    fs::create_dir_all(target.join("plugins")).unwrap();
+    fs::write(target.join("plugins/.track"), b"").unwrap();
+    // Shows up live on disk under the tracked directory, but was never added to Source.
+    fs::write(target.join("plugins/new-plugin.conf"), b"enabled = true\n").unwrap();
+
+    assert_eq!(run_diff(&source, &target), "plugins/new-plugin.conf\ttarget\n");
+}
+
+#[test]
+fn track_marked_directory_flags_missing_file_absent_from_target() {
+    let remote = init_bare_remote();
+    let remote_url = format!("file://{}", remote.to_string_lossy());
+    push_from_another_device(&remote_url, "plugins/.track", b"");
+    push_from_another_device(&remote_url, "plugins/existing.conf", b"enabled = true\n");
+
+    let source = temp_dir("diff-source-track-missing");
+    git::clone(&remote_url, &source).unwrap();
+
+    // Target never got this file (e.g. deleted locally, or never applied).
+    let target = temp_dir("diff-target-track-missing");
+    fs::create_dir_all(target.join("plugins")).unwrap();
+    fs::write(target.join("plugins/.track"), b"").unwrap();
+
+    assert_eq!(run_diff(&source, &target), "plugins/existing.conf\ttarget\n");
+}
+
+#[test]
+fn track_ignore_pattern_excludes_matching_file_from_new_scan() {
+    let remote = init_bare_remote();
+    let track_content: &[u8] = b"*.log\nnotes/private.md\n.trash\n";
+    let remote_url = format!("file://{}", remote.to_string_lossy());
+    push_from_another_device(&remote_url, "plugins/.track", track_content);
+
+    let source = temp_dir("diff-source-track-ignore");
+    git::clone(&remote_url, &source).unwrap();
+
+    let target = temp_dir("diff-target-track-ignore");
+    fs::create_dir_all(target.join("plugins/notes")).unwrap();
+    fs::create_dir_all(target.join("plugins/.trash")).unwrap();
+    fs::write(target.join("plugins/.track"), track_content).unwrap();
+    // Basename wildcard (`*.log`): excluded.
+    fs::write(target.join("plugins/debug.log"), b"noise\n").unwrap();
+    // Slash-qualified full-path pattern: excluded.
+    fs::write(target.join("plugins/notes/private.md"), b"secret notes\n").unwrap();
+    // Directory-component pattern (`.trash`, no slash): excludes the whole subtree.
+    fs::write(target.join("plugins/.trash/old.txt"), b"junk\n").unwrap();
+    // Doesn't match any pattern: still surfaced as new.
+    fs::write(target.join("plugins/notes/public.md"), b"shared notes\n").unwrap();
+
+    assert_eq!(run_diff(&source, &target), "plugins/notes/public.md\ttarget\n");
+}
+
+#[test]
+fn directory_without_track_never_scans_for_new_sibling_files() {
+    let remote = init_bare_remote();
+    let remote_url = format!("file://{}", remote.to_string_lossy());
+    push_from_another_device(&remote_url, "plugins/existing.conf", b"enabled = true\n");
+
+    let source = temp_dir("diff-source-file-mode");
+    git::clone(&remote_url, &source).unwrap();
+
+    // No .track file here: file-mode tracking only, so a sibling file that showed up
+    // on disk (but was never added to Source) must stay invisible to diff.
+    let target = temp_dir("diff-target-file-mode");
+    fs::create_dir_all(target.join("plugins")).unwrap();
+    fs::write(target.join("plugins/existing.conf"), b"enabled = true\n").unwrap();
+    fs::write(target.join("plugins/untracked-sibling.conf"), b"whatever\n").unwrap();
+
+    assert_eq!(run_diff(&source, &target), "");
+}
+
+#[test]
 fn reports_both_drifts_together_distinguishing_sides() {
     let remote = init_bare_remote();
     let remote_url = format!("file://{}", remote.to_string_lossy());

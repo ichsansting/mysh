@@ -1,7 +1,8 @@
-use crate::apply::walk_files;
+use crate::apply::{is_internal_dir_name, walk_files};
 use crate::git;
 use std::collections::BTreeSet;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// A plain file's drift, relative to `Source`, across the other two states.
@@ -26,6 +27,7 @@ pub fn diff(source: &Path, target: &Path) -> Result<Vec<FileDrift>, String> {
         .map(|p| p.strip_prefix(source).expect("entry is under source").to_path_buf())
         .collect();
     paths.extend(git::list_tree(source, &upstream)?);
+    paths.extend(tracked_new_paths(source, target, &paths).map_err(|e| e.to_string())?);
 
     let mut drifts = Vec::new();
     for path in paths {
@@ -41,6 +43,105 @@ pub fn diff(source: &Path, target: &Path) -> Result<Vec<FileDrift>, String> {
         }
     }
     Ok(drifts)
+}
+
+/// Directories marked with a `.track` file at their root (recursive search, skipping
+/// `.git`/`.mysh`), returned as paths relative to `source`.
+fn tracked_dirs(source: &Path) -> io::Result<Vec<PathBuf>> {
+    fn walk(dir: &Path, source: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+        if dir.join(".track").is_file() {
+            out.push(dir.strip_prefix(source).expect("entry is under source").to_path_buf());
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir()
+                && !is_internal_dir_name(path.file_name().and_then(|n| n.to_str()))
+            {
+                walk(&path, source, out)?;
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(source, source, &mut out)?;
+    Ok(out)
+}
+
+/// `.track`'s content as newline-separated glob patterns, blank lines dropped.
+fn track_patterns(track_file: &Path) -> Vec<String> {
+    fs::read_to_string(track_file)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// Whether `relative` (a path relative to a tracked directory) matches any ignore
+/// pattern: patterns containing `/` match the full relative path, others match any
+/// single path component (so `.cache` excludes a whole subtree, `*.log` excludes any
+/// file named like that at any depth).
+fn matches_ignore(patterns: &[String], relative: &Path) -> bool {
+    let relative_str = relative.to_string_lossy().replace('\\', "/");
+    patterns.iter().any(|p| {
+        if p.contains('/') {
+            glob_match(p, &relative_str)
+        } else {
+            relative
+                .components()
+                .any(|c| glob_match(p, &c.as_os_str().to_string_lossy()))
+        }
+    })
+}
+
+/// Minimal shell-style glob match: `*` any sequence (incl. empty), `?` any single char.
+fn glob_match(pattern: &str, text: &str) -> bool {
+    fn go(p: &[u8], t: &[u8]) -> bool {
+        match (p.first(), t.first()) {
+            (None, None) => true,
+            (Some(b'*'), _) => go(&p[1..], t) || (!t.is_empty() && go(p, &t[1..])),
+            (Some(b'?'), Some(_)) => go(&p[1..], &t[1..]),
+            (Some(pc), Some(tc)) if pc == tc => go(&p[1..], &t[1..]),
+            _ => false,
+        }
+    }
+    go(pattern.as_bytes(), text.as_bytes())
+}
+
+/// For every `.track`-marked directory in `source`, recursively walks the live
+/// `Target` counterpart (independent of git) and returns the paths found there that
+/// aren't already in `known` (i.e. absent from Source/Remote) and don't match that
+/// directory's ignore patterns. These feed into `diff`'s loop above, where their
+/// absence from `Source` naturally trips `target_drift` (new/save candidates).
+/// Directories without `.track` are never scanned.
+fn tracked_new_paths(
+    source: &Path,
+    target: &Path,
+    known: &BTreeSet<PathBuf>,
+) -> io::Result<Vec<PathBuf>> {
+    let mut new_paths = Vec::new();
+    for relative_dir in tracked_dirs(source)? {
+        let target_dir = target.join(&relative_dir);
+        if !target_dir.is_dir() {
+            continue;
+        }
+        let patterns = track_patterns(&source.join(&relative_dir).join(".track"));
+        for entry in walk_files(&target_dir)? {
+            let relative = entry.strip_prefix(target).expect("entry is under target").to_path_buf();
+            if known.contains(&relative) {
+                continue;
+            }
+            let relative_to_tracked_dir =
+                entry.strip_prefix(&target_dir).expect("entry is under target_dir");
+            if matches_ignore(&patterns, relative_to_tracked_dir) {
+                continue;
+            }
+            new_paths.push(relative);
+        }
+    }
+    Ok(new_paths)
 }
 
 /// One line per drifted path: `<path>\t<target,remote>`. Empty string when clean.
