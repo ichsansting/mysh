@@ -1,5 +1,6 @@
 use crate::fragment;
 use crate::log::AppLog;
+use crate::package;
 use crate::secret::{self, PassphraseFn};
 use std::fs;
 use std::io;
@@ -23,6 +24,9 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
     let log = AppLog::open(target);
     for entry in walk_files(source).map_err(|e| e.to_string())? {
         let source_relative = entry.strip_prefix(source).expect("entry is under source");
+        if source_relative == Path::new(package::DECLARATIONS_FILE) {
+            continue;
+        }
         let is_secret = secret::is_secret(source_relative);
         let relative: PathBuf = if is_secret {
             secret::strip_suffix(source_relative)
@@ -51,6 +55,8 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
             write_if_changed(dest, &content).map_err(|e| e.to_string())
         })?;
     }
+
+    package::install_eager(source, target, &log)?;
     Ok(())
 }
 

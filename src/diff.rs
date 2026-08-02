@@ -1,6 +1,7 @@
 use crate::apply::{is_internal_dir_name, walk_files};
 use crate::fragment;
 use crate::git;
+use crate::package;
 use crate::secret::{self, PassphraseFn};
 use std::collections::BTreeSet;
 use std::fs;
@@ -58,8 +59,14 @@ pub fn diff(
     paths.extend(git::list_tree(source, &upstream)?);
     paths.extend(tracked_new_paths(source, target, &paths).map_err(|e| e.to_string())?);
     // Fragment files and their merged Target name are handled in the dedicated loop
-    // below, never as an ordinary per-path drift entry.
-    paths.retain(|p| !fragment::is_fragment_member(p) && !fragment_targets.contains(p));
+    // below, never as an ordinary per-path drift entry. The top-level `.packages`
+    // declarations file is mysh metadata, never rendered to Target, so it never
+    // participates in drift either.
+    paths.retain(|p| {
+        !fragment::is_fragment_member(p)
+            && !fragment_targets.contains(p)
+            && p != Path::new(package::DECLARATIONS_FILE)
+    });
 
     let mut drifts = Vec::new();
     for source_path in paths {

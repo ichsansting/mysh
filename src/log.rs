@@ -74,6 +74,17 @@ impl AppLog {
         ))
     }
 
+    /// Records that this device didn't already have `mise` and mysh installed it.
+    pub fn record_mise_bootstrapped(&self) -> io::Result<()> {
+        self.append("mise-bootstrapped\n")
+    }
+
+    /// Records that mysh installed `specifier` via `mise` — what lets `teardown` later
+    /// uninstall it.
+    pub fn record_package_installed(&self, specifier: &str) -> io::Result<()> {
+        self.append(&format!("package-installed\t{specifier}\n"))
+    }
+
     fn append(&self, line: &str) -> io::Result<()> {
         fs::create_dir_all(self.state_dir())?;
         fs::OpenOptions::new()

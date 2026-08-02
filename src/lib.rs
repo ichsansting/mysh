@@ -5,6 +5,8 @@ pub mod diff;
 pub mod fragment;
 pub mod git;
 pub mod log;
+pub mod mise;
+pub mod package;
 pub mod reset;
 pub mod save;
 pub mod secret;
