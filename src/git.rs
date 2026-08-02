@@ -48,6 +48,11 @@ pub fn push(repo_dir: &Path) -> Result<(), String> {
     run(repo_dir, &["push"]).map(|_| ())
 }
 
+/// Hard-resets the working tree and index to `rev`, discarding local drift in Source.
+pub fn reset_hard(repo_dir: &Path, rev: &str) -> Result<(), String> {
+    run(repo_dir, &["reset", "--hard", rev]).map(|_| ())
+}
+
 /// The current branch's upstream ref (e.g. `origin/main`), representing `Remote`.
 pub fn upstream_ref(repo_dir: &Path) -> Result<String, String> {
     run(
