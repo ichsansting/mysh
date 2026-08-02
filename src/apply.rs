@@ -1,3 +1,4 @@
+use crate::fragment;
 use crate::log::AppLog;
 use crate::secret::{self, PassphraseFn};
 use std::fs;
@@ -5,9 +6,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// Renders every file in `source` to its mirrored relative path under `target`: plain
-/// files via identity copy, `Secret`s (`.age`-suffixed) via decrypt. Skips `.git`
-/// (Source is a git working tree). Idempotent: a file is only (re)written when its
-/// content differs from what's already at the target path.
+/// files via identity copy, `Secret`s (`.age`-suffixed) via decrypt, `Fragment`
+/// directories (`<name>.d/`) via concatenate-in-filename-order into a single `<name>`
+/// file. Skips `.git` (Source is a git working tree). Idempotent: a file is only
+/// (re)written when its content differs from what's already at the target path.
 ///
 /// The first time a given path is applied, pre-existing content at that path is backed
 /// up and the Application Log records it as overwritten; a path with no prior content
@@ -27,32 +29,59 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
         } else {
             source_relative.to_path_buf()
         };
-        let dest = target.join(&relative);
-        let first_touch = !log.is_managed(&relative).map_err(|e| e.to_string())?;
-        let backup = if first_touch && dest.exists() {
-            Some(back_up(&log, target, &relative, &dest).map_err(|e| e.to_string())?)
-        } else {
-            None
-        };
 
         if is_secret {
             let ciphertext = fs::read(&entry).map_err(|e| e.to_string())?;
             let passphrase = get_passphrase()?;
             let plaintext = secret::decrypt(&ciphertext, &passphrase)?;
-            secret::write_restricted(&dest, &plaintext).map_err(|e| e.to_string())?;
+            apply_one(&log, target, &relative, |dest| {
+                secret::write_restricted(dest, &plaintext).map_err(|e| e.to_string())
+            })?;
         } else {
-            copy_if_changed(&entry, &dest).map_err(|e| e.to_string())?;
+            apply_one(&log, target, &relative, |dest| {
+                copy_if_changed(&entry, dest).map_err(|e| e.to_string())
+            })?;
         }
+    }
 
-        // Only recorded once the real write above has succeeded, so the log never
-        // claims a path was created/overwritten when it wasn't actually written.
-        if first_touch {
-            match backup {
-                Some(backup_relative) => {
-                    log.record_overwritten(&relative, &backup_relative).map_err(|e| e.to_string())?
-                }
-                None => log.record_created(&relative).map_err(|e| e.to_string())?,
+    for fragment_dir in fragment::find_fragment_dirs(source).map_err(|e| e.to_string())? {
+        let relative = fragment::target_name(&fragment_dir);
+        let content = fragment::render(&source.join(&fragment_dir), get_passphrase)?;
+        apply_one(&log, target, &relative, |dest| {
+            write_if_changed(dest, &content).map_err(|e| e.to_string())
+        })?;
+    }
+    Ok(())
+}
+
+/// The first-touch/backup/record bookkeeping shared by every render kind (plain,
+/// secret, fragment): backs up pre-existing content at `target`-relative `relative` on
+/// first touch, calls `write` to render the new content, then records
+/// created/overwritten in the Application Log. Only recorded once `write` has
+/// succeeded, so the log never claims a path was touched when it wasn't; once a path is
+/// logged, later applies never re-back-up or re-classify it.
+fn apply_one(
+    log: &AppLog,
+    target: &Path,
+    relative: &Path,
+    write: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let dest = target.join(relative);
+    let first_touch = !log.is_managed(relative).map_err(|e| e.to_string())?;
+    let backup = if first_touch && dest.exists() {
+        Some(back_up(log, target, relative, &dest).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+
+    write(&dest)?;
+
+    if first_touch {
+        match backup {
+            Some(backup_relative) => {
+                log.record_overwritten(relative, &backup_relative).map_err(|e| e.to_string())?
             }
+            None => log.record_created(relative).map_err(|e| e.to_string())?,
         }
     }
     Ok(())
@@ -82,9 +111,10 @@ pub(crate) fn is_internal_dir_name(name: Option<&str>) -> bool {
     matches!(name, Some(".git") | Some(".mysh"))
 }
 
-/// Recursively lists files under `dir`, skipping `.git` and `.mysh` (shared with
-/// `diff`, which also needs the set of plain files Source/Target currently have on
-/// disk).
+/// Recursively lists files under `dir`, skipping `.git`/`.mysh` and not descending into
+/// `Fragment` directories (`<name>.d/`, handled separately as a composed unit). Shared
+/// with `diff`, which also needs the set of plain files Source/Target currently have on
+/// disk.
 pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -92,7 +122,9 @@ pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            if is_internal_dir_name(path.file_name().and_then(|n| n.to_str())) {
+            if is_internal_dir_name(path.file_name().and_then(|n| n.to_str()))
+                || fragment::is_fragment_dir(&path)
+            {
                 continue;
             }
             files.extend(walk_files(&path)?);
@@ -104,7 +136,10 @@ pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
 }
 
 fn copy_if_changed(src: &Path, dest: &Path) -> io::Result<()> {
-    let content = fs::read(src)?;
+    write_if_changed(dest, &fs::read(src)?)
+}
+
+fn write_if_changed(dest: &Path, content: &[u8]) -> io::Result<()> {
     if fs::read(dest).map(|existing| existing == content).unwrap_or(false) {
         return Ok(());
     }

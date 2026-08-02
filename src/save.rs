@@ -10,7 +10,9 @@ use std::path::Path;
 /// wins. Always shows the pending diff and requires explicit confirmation on `input`
 /// before mutating anything; declining leaves `Source`, `Target`, and `Remote`
 /// unchanged. An edited `Secret` is re-encrypted (fresh salt/nonce) back into its
-/// `Source` `.age` file, never written there as plaintext.
+/// `Source` `.age` file, never written there as plaintext. Refuses (with no prompt) if
+/// any drifted path is a `Fragment`-composed target — there's no unambiguous fragment
+/// to attribute a merged-file edit back to.
 pub fn save(
     source: &Path,
     target: &Path,
@@ -23,6 +25,13 @@ pub fn save(
         .collect();
     if drifted.is_empty() {
         return Ok("nothing to save\n".to_string());
+    }
+    if let Some(fragment) = drifted.iter().find(|d| d.is_fragment) {
+        return Err(format!(
+            "'{}' is composed from fragments in {}; edit the fragment directly instead of saving",
+            fragment.path.display(),
+            fragment.source_path.display(),
+        ));
     }
 
     print!("{}", diff::format_drifts(&drifted));

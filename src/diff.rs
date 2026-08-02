@@ -1,4 +1,5 @@
 use crate::apply::{is_internal_dir_name, walk_files};
+use crate::fragment;
 use crate::git;
 use crate::secret::{self, PassphraseFn};
 use std::collections::BTreeSet;
@@ -10,12 +11,17 @@ use std::path::{Path, PathBuf};
 pub struct FileDrift {
     /// `Target`-relative path (a `Secret`'s `.age` suffix is stripped).
     pub path: PathBuf,
-    /// `Source`-relative path (a `Secret` keeps its `.age` suffix).
+    /// `Source`-relative path (a `Secret` keeps its `.age` suffix; a `Fragment`-composed
+    /// target points at its `<name>.d/` directory).
     pub source_path: PathBuf,
     pub is_secret: bool,
+    /// Whether `path` is composed from a `Fragment` directory rather than a single
+    /// `Source` file — derived-only, so `save` refuses it.
+    pub is_fragment: bool,
     /// `Target` (live disk) differs from `Source`.
     pub target_drift: bool,
     /// `Source` differs from `Remote` (either side may have unpulled/unpushed commits).
+    /// Always `false` for a `Fragment`-composed target (not tracked at that granularity).
     pub remote_drift: bool,
 }
 
@@ -28,6 +34,10 @@ pub struct FileDrift {
 /// content actually changed) but `Target`-vs-`Source` always decrypts a fresh copy of
 /// `Source` and compares plaintext-to-plaintext against `Target` — never ciphertext to
 /// plaintext. `get_passphrase` is only called when a `Secret` is actually encountered.
+///
+/// A `Fragment`-composed target (`<name>.d/` in `Source`) is reported once, under its
+/// merged name, comparing a fresh concatenated render against live `Target` content —
+/// individual fragment files never appear as their own drift entries.
 pub fn diff(
     source: &Path,
     target: &Path,
@@ -36,6 +46,10 @@ pub fn diff(
     git::fetch(source)?;
     let upstream = git::upstream_ref(source)?;
 
+    let fragment_dirs = fragment::find_fragment_dirs(source).map_err(|e| e.to_string())?;
+    let fragment_targets: BTreeSet<PathBuf> =
+        fragment_dirs.iter().map(|d| fragment::target_name(d)).collect();
+
     let mut paths: BTreeSet<PathBuf> = walk_files(source)
         .map_err(|e| e.to_string())?
         .iter()
@@ -43,6 +57,9 @@ pub fn diff(
         .collect();
     paths.extend(git::list_tree(source, &upstream)?);
     paths.extend(tracked_new_paths(source, target, &paths).map_err(|e| e.to_string())?);
+    // Fragment files and their merged Target name are handled in the dedicated loop
+    // below, never as an ordinary per-path drift entry.
+    paths.retain(|p| !fragment::is_fragment_member(p) && !fragment_targets.contains(p));
 
     let mut drifts = Vec::new();
     for source_path in paths {
@@ -66,7 +83,32 @@ pub fn diff(
         let remote_drift = source_content != remote_content;
 
         if target_drift || remote_drift {
-            drifts.push(FileDrift { path, source_path, is_secret, target_drift, remote_drift });
+            drifts.push(FileDrift {
+                path,
+                source_path,
+                is_secret,
+                is_fragment: false,
+                target_drift,
+                remote_drift,
+            });
+        }
+    }
+
+    // ponytail: remote drift isn't tracked per-fragment (would mean rendering the
+    // Remote-side fragment set too); add if a user asks to diff fragment edits pre-push.
+    for fragment_dir in fragment_dirs {
+        let path = fragment::target_name(&fragment_dir);
+        let rendered = fragment::render(&source.join(&fragment_dir), get_passphrase)?;
+        let target_content = fs::read(target.join(&path)).ok();
+        if target_content.as_deref() != Some(rendered.as_slice()) {
+            drifts.push(FileDrift {
+                path,
+                source_path: fragment_dir,
+                is_secret: false,
+                is_fragment: true,
+                target_drift: true,
+                remote_drift: false,
+            });
         }
     }
     Ok(drifts)
