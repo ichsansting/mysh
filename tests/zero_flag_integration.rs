@@ -45,10 +45,11 @@ fn run_zero_flag(home: &Path, args: &[&str], stdin: &str) -> Output {
     child.wait_with_output().unwrap()
 }
 
-/// After a real `bootstrap.sh` run, `apply`, `diff`, `save`, `reset`, and `teardown`
-/// must all work with no flags and no env vars set — the zero-flag daily-usage
-/// contract this ticket adds. `apply` renders a clean checkout, so `diff`/`save`/
-/// `reset` see no drift; `teardown` still has apply's log entries to reverse.
+/// After a real `bootstrap.sh` run, `apply`, `diff`, `save`, `reset`, `add`, and
+/// `teardown` must all work with no flags and no env vars set — the zero-flag
+/// daily-usage contract this ticket adds. `apply` renders a clean checkout, so
+/// `diff`/`save`/`reset` see no drift; `teardown` still has apply's log entries to
+/// reverse.
 #[test]
 fn every_documented_command_succeeds_post_bootstrap_with_no_flags_or_env() {
     let home = temp_dir("zero-flag-home");
@@ -73,6 +74,11 @@ fn every_documented_command_succeeds_post_bootstrap_with_no_flags_or_env() {
     let reset_out = run_zero_flag(&home, &["reset"], "");
     assert!(reset_out.status.success(), "reset: {}", String::from_utf8_lossy(&reset_out.stderr));
     assert_eq!(reset_out.stdout, b"nothing to reset\n");
+
+    fs::write(home.join("newconf"), b"new-config\n").unwrap();
+    let add_out = run_zero_flag(&home, &["add", "newconf"], "");
+    assert!(add_out.status.success(), "add: {}", String::from_utf8_lossy(&add_out.stderr));
+    assert_eq!(fs::read(source.join("newconf")).unwrap(), b"new-config\n");
 
     let teardown_out = run_zero_flag(&home, &["teardown"], "y\n");
     assert!(teardown_out.status.success(), "teardown: {}", String::from_utf8_lossy(&teardown_out.stderr));

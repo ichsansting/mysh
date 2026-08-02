@@ -6,18 +6,18 @@ This ticket originally covered only the secret-creation gap; grilling on 2026-08
 
 **Blocked by:** 06 — Secrets (done)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `mysh add <path>` dispatches on whether `<path>` exists on disk: a file → file-add, a directory → folder-add, a path that doesn't exist at all → treated as a package specifier (package-add)
-- [ ] File-add copies the file's live `Target` content into `Source` at the mirrored relative path; errors (pointing at `save`) if that path is already tracked
-- [ ] `--secret` on a single-file add encrypts the content via the existing `secret::encrypt`/`passphrase_provider` machinery and writes the `.age`-suffixed file instead of a plain copy; invalid (error) combined with a folder or package argument
-- [ ] Folder-add creates the mirrored directory in `Source` with a `.track` marker (per issue 05's existing directory-tracking mechanism), optionally seeded with `--ignore <pattern>` (repeatable) using `.track`'s existing glob syntax; errors (pointing at `save`) if that directory is already tracked
-- [ ] Folder-add then walks the folder respecting any `--ignore` patterns, shows the resulting file list, and requires `y/N` confirmation before bulk-copying every matched file into `Source`
-- [ ] Package-add treats the argument as a `mise` specifier and appends one line to `.packages`; errors if that exact specifier is already declared
-- [ ] Package-add defaults the new declaration to `lazy` (issue 13's eager-`PATH` bug is still open); `--eager`/`--lazy` override the default; `--bin <name>` overrides the derived binary name
-- [ ] Package-add does not attempt to discover or register multiple binaries for one specifier — one invocation writes one `.packages` line, matching the existing one-line-one-binary model; a specifier that provides multiple binaries still needs additional lines added by hand
-- [ ] Cover with the same testing pattern as the rest of the CLI (real entrypoint, injected `SOURCE_DIR`/`TARGET_DIR`/`Passphrase`)
-- [ ] Update `spec.md`'s command list (currently `apply|diff|save|reset|teardown`) to include `add`
+- [x] `mysh add <path>` dispatches on whether `<path>` exists on disk: a file → file-add, a directory → folder-add, a path that doesn't exist at all → treated as a package specifier (package-add) — `src/add.rs`'s `add()` dispatch
+- [x] File-add copies the file's live `Target` content into `Source` at the mirrored relative path; errors (pointing at `save`) if that path is already tracked — `src/add.rs`'s `file_add`, also refuses when the `.age` counterpart of the same mirrored path is already tracked (not just the literal path), so a plain and secret copy of the same `Target` file can never collide
+- [x] `--secret` on a single-file add encrypts the content via the existing `secret::encrypt`/`passphrase_provider` machinery and writes the `.age`-suffixed file instead of a plain copy; invalid (error) combined with a folder or package argument — enforced in `add()` before dispatching to `folder_add`/`package_add`
+- [x] Folder-add creates the mirrored directory in `Source` with a `.track` marker (per issue 05's existing directory-tracking mechanism), optionally seeded with `--ignore <pattern>` (repeatable) using `.track`'s existing glob syntax; errors (pointing at `save`) if that directory is already tracked
+- [x] Folder-add then walks the folder respecting any `--ignore` patterns, shows the resulting file list, and requires `y/N` confirmation before bulk-copying every matched file into `Source` — a decline rolls back exactly what `add` itself created (the `.track` marker, or the whole newly-created directory chain for a nested untracked path), never touching anything that predates it
+- [x] Package-add treats the argument as a `mise` specifier and appends one line to `.packages`; errors if that exact specifier is already declared
+- [x] Package-add defaults the new declaration to `lazy` (issue 13's eager-`PATH` bug is still open); `--eager`/`--lazy` override the default; `--bin <name>` overrides the derived binary name
+- [x] Package-add does not attempt to discover or register multiple binaries for one specifier — one invocation writes one `.packages` line, matching the existing one-line-one-binary model; a specifier that provides multiple binaries still needs additional lines added by hand
+- [x] Cover with the same testing pattern as the rest of the CLI (real entrypoint, injected `SOURCE_DIR`/`TARGET_DIR`/`Passphrase`) — `tests/add_integration.rs` (15 tests) plus an `add` step folded into `tests/zero_flag_integration.rs`'s post-bootstrap contract test
+- [x] Update `spec.md`'s command list (currently `apply|diff|save|reset|teardown`) to include `add` — new `add <path>` bullet in `.scratch/mysh/spec.md`'s Implementation Decisions, and `main.rs`'s usage string
 
 **Found while:** seeding `ichsansting/dotfiles` — three real secrets (SSH private key, GitHub token, Claude OAuth token) were deliberately left out of the initial seed because there's no supported way to encrypt them into `Source` without reaching for `secret::encrypt` directly. Broadened during triage after the reporter noted the same gap exists for plain files, directories, and packages.
 
@@ -57,18 +57,18 @@ A single `mysh add <path> [--secret] [--eager|--lazy] [--bin <name>] [--ignore <
 - `Config::resolve`-style source/target directory resolution — `add` needs both, same as every other subcommand
 
 **Acceptance criteria:**
-- [ ] `mysh add <path>` for an untracked file that exists on `Target` copies its content into `Source` at the mirrored path; a subsequent `apply`/`diff` shows it as tracked with no drift
-- [ ] `mysh add <path>` for an already-tracked file errors without modifying `Source`, and the error text references `save`
-- [ ] `mysh add <path> --secret` writes an `.age`-suffixed file in `Source` whose content round-trips through the existing decrypt function back to the original plaintext
-- [ ] `mysh add <path> --secret` where `<path>` is a directory, or where the argument resolves to a package specifier, errors without writing anything
-- [ ] `mysh add <folder-path>` for an untracked, existing directory creates the directory-tracking marker in `Source`, then shows a confirmation prompt; declining leaves `Source` completely unchanged; accepting copies every non-ignored file under that directory into `Source` at their mirrored paths
-- [ ] `mysh add <folder-path> --ignore <pattern>` excludes matching files from both the shown list and the copy, using the same pattern semantics as the existing directory-tracking marker file
-- [ ] `mysh add <folder-path>` for an already-tracked directory errors without modifying `Source`, and the error text references `save`
-- [ ] `mysh add <specifier>` for a path that doesn't exist on disk appends one correctly-formatted line to the package declarations file with `lazy` classification by default
-- [ ] `mysh add <specifier> --eager` / `--lazy` / `--bin <name>` override classification/bin name as expected in the appended line
-- [ ] `mysh add <specifier>` for a specifier already present in the package declarations file errors without modifying the file
-- [ ] Every new behavior is covered by tests driving the real CLI entrypoint against injected `SOURCE_DIR`/`TARGET_DIR`/`Passphrase`, per this repo's established testing pattern
-- [ ] `spec.md`'s command list is updated to include `add`
+- [x] `mysh add <path>` for an untracked file that exists on `Target` copies its content into `Source` at the mirrored path; a subsequent `apply`/`diff` shows it as tracked with no drift
+- [x] `mysh add <path>` for an already-tracked file errors without modifying `Source`, and the error text references `save`
+- [x] `mysh add <path> --secret` writes an `.age`-suffixed file in `Source` whose content round-trips through the existing decrypt function back to the original plaintext
+- [x] `mysh add <path> --secret` where `<path>` is a directory, or where the argument resolves to a package specifier, errors without writing anything
+- [x] `mysh add <folder-path>` for an untracked, existing directory creates the directory-tracking marker in `Source`, then shows a confirmation prompt; declining leaves `Source` completely unchanged; accepting copies every non-ignored file under that directory into `Source` at their mirrored paths
+- [x] `mysh add <folder-path> --ignore <pattern>` excludes matching files from both the shown list and the copy, using the same pattern semantics as the existing directory-tracking marker file
+- [x] `mysh add <folder-path>` for an already-tracked directory errors without modifying `Source`, and the error text references `save`
+- [x] `mysh add <specifier>` for a path that doesn't exist on disk appends one correctly-formatted line to the package declarations file with `lazy` classification by default
+- [x] `mysh add <specifier> --eager` / `--lazy` / `--bin <name>` override classification/bin name as expected in the appended line
+- [x] `mysh add <specifier>` for a specifier already present in the package declarations file errors without modifying the file
+- [x] Every new behavior is covered by tests driving the real CLI entrypoint against injected `SOURCE_DIR`/`TARGET_DIR`/`Passphrase`, per this repo's established testing pattern
+- [x] `spec.md`'s command list is updated to include `add`
 
 **Out of scope:**
 - Fixing issue 13 (eager packages not landing on `PATH`) — `add` only needs to default to the classification that already works

@@ -158,8 +158,9 @@ fn track_patterns(track_file: &Path) -> Vec<String> {
 /// Whether `relative` (a path relative to a tracked directory) matches any ignore
 /// pattern: patterns containing `/` match the full relative path, others match any
 /// single path component (so `.cache` excludes a whole subtree, `*.log` excludes any
-/// file named like that at any depth).
-fn matches_ignore(patterns: &[String], relative: &Path) -> bool {
+/// file named like that at any depth). Shared with `add`'s folder-add, whose
+/// `--ignore` flags use this exact same pattern syntax.
+pub(crate) fn matches_ignore(patterns: &[String], relative: &Path) -> bool {
     let relative_str = relative.to_string_lossy().replace('\\', "/");
     patterns.iter().any(|p| {
         if p.contains('/') {

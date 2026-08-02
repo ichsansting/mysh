@@ -1,3 +1,4 @@
+use mysh::add;
 use mysh::apply;
 use mysh::config::Config;
 use mysh::diff;
@@ -11,7 +12,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let Some(command) = args.get(1) else {
-        eprintln!("usage: mysh <apply|diff|save|reset|teardown> [--source-dir DIR] [--target-dir DIR] [--remote-url URL] [--passphrase PASS]");
+        eprintln!("usage: mysh <apply|diff|save|reset|add|teardown> [--source-dir DIR] [--target-dir DIR] [--remote-url URL] [--passphrase PASS]");
         return ExitCode::FAILURE;
     };
 
@@ -90,6 +91,33 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        },
+        "add" => match add::parse_flags(rest) {
+            Ok((flags, config_args)) => match Config::resolve(&config_args) {
+                Ok(config) => {
+                    let stdin = io::stdin();
+                    let mut input = stdin.lock();
+                    let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
+                    match add::add(&config.source_dir, &config.target_dir, flags, &mut input, &mut get_passphrase) {
+                        Ok(msg) => {
+                            print!("{msg}");
+                            ExitCode::SUCCESS
+                        }
+                        Err(e) => {
+                            eprintln!("{e}");
+                            ExitCode::FAILURE
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    ExitCode::FAILURE
+                }
+            },
             Err(e) => {
                 eprintln!("{e}");
                 ExitCode::FAILURE
