@@ -29,3 +29,9 @@ pub fn write_executable(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
+
+/// The real `PATH` with `stub_dir` prepended, so fake tools written there shadow any
+/// real ones of the same name — every PATH-stubbed integration test needs this.
+pub fn bare_env_path(stub_dir: &Path) -> String {
+    format!("{}:{}", stub_dir.display(), std::env::var("PATH").unwrap())
+}

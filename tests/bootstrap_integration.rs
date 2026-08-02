@@ -3,7 +3,7 @@ mod support;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use support::{temp_dir, write_executable};
+use support::{bare_env_path, temp_dir, write_executable};
 
 fn bootstrap_sh() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("bootstrap.sh")
@@ -61,23 +61,28 @@ chmod +x "$out"
     write_executable(&stub_dir.join("curl"), &script);
 }
 
-/// The real `PATH` (bootstrap.sh needs a real `git`), with `stub_dir` prepended so the
-/// fake `curl` shadows any real one — the "only `git` present" bare environment from
-/// the ticket, minus a real network fetch.
-fn bare_env_path(stub_dir: &Path) -> String {
-    format!("{}:{}", stub_dir.display(), std::env::var("PATH").unwrap())
-}
-
-fn run_bootstrap(target: &Path, remote_url: &str, stub_dir: &Path, rc_file: &Path) -> std::process::Output {
-    Command::new("sh")
-        .arg(bootstrap_sh())
+/// Runs the real `bootstrap.sh` (bootstrap.sh needs a real `git`) against a bare,
+/// stub-tool-only `PATH` (the "only `git` present" environment from the ticket, minus a
+/// real network fetch) — `releases_repo: None` leaves `MYSH_RELEASES_REPO` unset
+/// entirely, to test bootstrap.sh's own default rather than overriding it.
+fn run_bootstrap(
+    target: &Path,
+    remote_url: &str,
+    stub_dir: &Path,
+    rc_file: &Path,
+    releases_repo: Option<&str>,
+) -> std::process::Output {
+    let mut cmd = Command::new("sh");
+    cmd.arg(bootstrap_sh())
         .env("PATH", bare_env_path(stub_dir))
         .env("MYSH_REMOTE_URL", remote_url)
-        .env("MYSH_RELEASES_REPO", "test-owner/mysh")
         .env("MYSH_TARGET_DIR", target)
-        .env("MYSH_RC_FILE", rc_file)
-        .output()
-        .expect("failed to run bootstrap.sh")
+        .env("MYSH_RC_FILE", rc_file);
+    match releases_repo {
+        Some(repo) => cmd.env("MYSH_RELEASES_REPO", repo),
+        None => cmd.env_remove("MYSH_RELEASES_REPO"),
+    };
+    cmd.output().expect("failed to run bootstrap.sh")
 }
 
 #[test]
@@ -90,13 +95,20 @@ fn bootstrap_installs_binary_adds_path_clones_source_and_hands_off() {
 
     write_fake_curl(&stub_dir);
 
-    let output = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file);
+    let output = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file, Some("test-owner/mysh"));
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 
     // Downloaded the matching prebuilt binary, from mysh's own releases.
     let curl_calls = fs::read_to_string(stub_dir.join("curl.calls")).unwrap();
     assert!(
         curl_calls.contains("https://github.com/test-owner/mysh/releases/latest/download/mysh-"),
+        "curl calls were: {curl_calls:?}"
+    );
+    // The asset name is honest about being musl-linked (static, self-contained) on
+    // Linux — release.sh actually builds musl, not glibc.
+    #[cfg(target_os = "linux")]
+    assert!(
+        curl_calls.contains("-unknown-linux-musl"),
         "curl calls were: {curl_calls:?}"
     );
 
@@ -136,6 +148,28 @@ fn bootstrap_installs_binary_adds_path_clones_source_and_hands_off() {
 }
 
 #[test]
+fn bootstrap_defaults_to_mysh_own_releases_repo_with_no_env_override() {
+    let target = temp_dir("bootstrap-target-default-repo");
+    let stub_dir = temp_dir("bootstrap-stub-default-repo");
+    let rc_file = target.join("rcfile");
+    let remote = init_bare_remote_with_file("bashrc", b"export EDITOR=vim\n");
+    let remote_url = format!("file://{}", remote.to_string_lossy());
+
+    write_fake_curl(&stub_dir);
+
+    // No MYSH_RELEASES_REPO set — must fall back to the real mysh repo, not the
+    // CHANGE_ME placeholder, so a real post-bootstrap.sh device can actually find it.
+    let output = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file, None);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    let curl_calls = fs::read_to_string(stub_dir.join("curl.calls")).unwrap();
+    assert!(
+        curl_calls.contains("https://github.com/ichsansting/mysh/releases/latest/download/mysh-"),
+        "curl calls were: {curl_calls:?}"
+    );
+}
+
+#[test]
 fn rerunning_bootstrap_does_not_duplicate_the_path_line_or_log_entries() {
     let target = temp_dir("bootstrap-target-rerun");
     let stub_dir = temp_dir("bootstrap-stub-rerun");
@@ -145,10 +179,10 @@ fn rerunning_bootstrap_does_not_duplicate_the_path_line_or_log_entries() {
 
     write_fake_curl(&stub_dir);
 
-    let first = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file);
+    let first = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file, Some("test-owner/mysh"));
     assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
 
-    let second = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file);
+    let second = run_bootstrap(&target, &remote_url, &stub_dir, &rc_file, Some("test-owner/mysh"));
     assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
 
     let rc_text = fs::read_to_string(&rc_file).unwrap();

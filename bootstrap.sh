@@ -16,7 +16,7 @@ REMOTE_URL="${MYSH_REMOTE_URL:-https://github.com/CHANGE_ME/dotfiles}"
 
 # Where mysh's own prebuilt binaries are published. Fixed mysh project infrastructure,
 # not a per-user setting — override with MYSH_RELEASES_REPO only for testing.
-RELEASES_REPO="${MYSH_RELEASES_REPO:-CHANGE_ME/mysh}"
+RELEASES_REPO="${MYSH_RELEASES_REPO:-ichsansting/mysh}"
 VERSION="${MYSH_VERSION:-latest}"
 
 TARGET_DIR="${MYSH_TARGET_DIR:-$HOME}"
@@ -33,8 +33,10 @@ case "$REMOTE_URL" in
 esac
 
 # --- Detect OS/architecture, map to the matching Rust target triple ---
+# Linux binaries are musl-linked (static, self-contained) — the asset name says so
+# honestly, matching what release.sh actually builds.
 case "$(uname -s)" in
-    Linux) os_part="unknown-linux-gnu" ;;
+    Linux) os_part="unknown-linux-musl" ;;
     Darwin) os_part="apple-darwin" ;;
     *) echo "bootstrap.sh: unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
