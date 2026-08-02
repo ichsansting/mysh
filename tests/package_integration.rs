@@ -3,14 +3,7 @@ mod support;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use support::temp_dir;
-
-#[cfg(unix)]
-fn write_executable(path: &Path, content: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    fs::write(path, content).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-}
+use support::{temp_dir, write_executable};
 
 /// The real `PATH`, minus any directory that already has a `mise` binary in it — the
 /// dev/CI machine running this test may well have `mise` installed for its own use,

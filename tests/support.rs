@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,4 +19,13 @@ pub fn temp_dir(label: &str) -> PathBuf {
     ));
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// Writes `content` to `path` as an executable script (mode 0o755) — the shape every
+/// PATH-stubbed fake binary in the integration tests needs.
+#[cfg(unix)]
+pub fn write_executable(path: &Path, content: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(path, content).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
