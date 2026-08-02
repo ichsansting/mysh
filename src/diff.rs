@@ -1,23 +1,38 @@
 use crate::apply::{is_internal_dir_name, walk_files};
 use crate::git;
+use crate::secret::{self, PassphraseFn};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// A plain file's drift, relative to `Source`, across the other two states.
+/// A file's drift, relative to `Source`, across the other two states.
 pub struct FileDrift {
+    /// `Target`-relative path (a `Secret`'s `.age` suffix is stripped).
     pub path: PathBuf,
+    /// `Source`-relative path (a `Secret` keeps its `.age` suffix).
+    pub source_path: PathBuf,
+    pub is_secret: bool,
     /// `Target` (live disk) differs from `Source`.
     pub target_drift: bool,
     /// `Source` differs from `Remote` (either side may have unpulled/unpushed commits).
     pub remote_drift: bool,
 }
 
-/// Three-way drift report for plain files: `Target` (live disk) vs `Source` (repo
-/// working tree) vs `Remote` (git remote). Fetches `Remote` first so the comparison
-/// reflects commits pushed from elsewhere but not yet pulled.
-pub fn diff(source: &Path, target: &Path) -> Result<Vec<FileDrift>, String> {
+/// Three-way drift report: `Target` (live disk) vs `Source` (repo working tree) vs
+/// `Remote` (git remote). Fetches `Remote` first so the comparison reflects commits
+/// pushed from elsewhere but not yet pulled.
+///
+/// For a `Secret`, `Source`-vs-`Remote` compares raw ciphertext (a byte-identical blob
+/// means identical plaintext, since `save` only ever rewrites it when the decrypted
+/// content actually changed) but `Target`-vs-`Source` always decrypts a fresh copy of
+/// `Source` and compares plaintext-to-plaintext against `Target` — never ciphertext to
+/// plaintext. `get_passphrase` is only called when a `Secret` is actually encountered.
+pub fn diff(
+    source: &Path,
+    target: &Path,
+    get_passphrase: &mut PassphraseFn,
+) -> Result<Vec<FileDrift>, String> {
     git::fetch(source)?;
     let upstream = git::upstream_ref(source)?;
 
@@ -30,16 +45,28 @@ pub fn diff(source: &Path, target: &Path) -> Result<Vec<FileDrift>, String> {
     paths.extend(tracked_new_paths(source, target, &paths).map_err(|e| e.to_string())?);
 
     let mut drifts = Vec::new();
-    for path in paths {
-        let source_content = fs::read(source.join(&path)).ok();
-        let target_content = fs::read(target.join(&path)).ok();
-        let remote_content = git::show(source, &upstream, &path)?;
+    for source_path in paths {
+        let is_secret = secret::is_secret(&source_path);
+        let path = if is_secret { secret::strip_suffix(&source_path) } else { source_path.clone() };
 
-        let target_drift = target_content != source_content;
+        let source_content = fs::read(source.join(&source_path)).ok();
+        let target_content = fs::read(target.join(&path)).ok();
+        let remote_content = git::show(source, &upstream, &source_path)?;
+
+        let expected_target_content = if is_secret {
+            match &source_content {
+                Some(ciphertext) => Some(secret::decrypt(ciphertext, &get_passphrase()?)?),
+                None => None,
+            }
+        } else {
+            source_content.clone()
+        };
+
+        let target_drift = target_content != expected_target_content;
         let remote_drift = source_content != remote_content;
 
         if target_drift || remote_drift {
-            drifts.push(FileDrift { path, target_drift, remote_drift });
+            drifts.push(FileDrift { path, source_path, is_secret, target_drift, remote_drift });
         }
     }
     Ok(drifts)

@@ -1,6 +1,7 @@
 use crate::confirm::confirm;
 use crate::diff;
 use crate::git;
+use crate::secret::{self, PassphraseFn};
 use std::fs;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -8,9 +9,15 @@ use std::path::Path;
 /// Captures `Target` drift into `Source`, commits, and pushes to `Remote` — local
 /// wins. Always shows the pending diff and requires explicit confirmation on `input`
 /// before mutating anything; declining leaves `Source`, `Target`, and `Remote`
-/// unchanged.
-pub fn save(source: &Path, target: &Path, input: &mut dyn BufRead) -> Result<String, String> {
-    let drifted: Vec<_> = diff::diff(source, target)?
+/// unchanged. An edited `Secret` is re-encrypted (fresh salt/nonce) back into its
+/// `Source` `.age` file, never written there as plaintext.
+pub fn save(
+    source: &Path,
+    target: &Path,
+    input: &mut dyn BufRead,
+    get_passphrase: &mut PassphraseFn,
+) -> Result<String, String> {
+    let drifted: Vec<_> = diff::diff(source, target, get_passphrase)?
         .into_iter()
         .filter(|d| d.target_drift)
         .collect();
@@ -24,13 +31,18 @@ pub fn save(source: &Path, target: &Path, input: &mut dyn BufRead) -> Result<Str
     }
 
     for d in &drifted {
-        let dest = source.join(&d.path);
+        let dest = source.join(&d.source_path);
         match fs::read(target.join(&d.path)) {
             Ok(content) => {
+                let to_write = if d.is_secret {
+                    secret::encrypt(&content, &get_passphrase()?)?
+                } else {
+                    content
+                };
                 if let Some(parent) = dest.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
-                fs::write(&dest, content).map_err(|e| e.to_string())?;
+                fs::write(&dest, to_write).map_err(|e| e.to_string())?;
             }
             // Deleted on Target: drift is captured as a deletion in Source too.
             Err(e) if e.kind() == io::ErrorKind::NotFound => {

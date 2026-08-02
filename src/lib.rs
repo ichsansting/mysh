@@ -6,3 +6,4 @@ pub mod git;
 pub mod log;
 pub mod reset;
 pub mod save;
+pub mod secret;

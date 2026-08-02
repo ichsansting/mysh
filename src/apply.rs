@@ -1,40 +1,57 @@
 use crate::log::AppLog;
+use crate::secret::{self, PassphraseFn};
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// Renders every plain file in `source` to its mirrored relative path under `target`
-/// via identity copy. Skips `.git` (Source is a git working tree). Idempotent: a file
-/// is only (re)written when its content differs from what's already at the target path.
+/// Renders every file in `source` to its mirrored relative path under `target`: plain
+/// files via identity copy, `Secret`s (`.age`-suffixed) via decrypt. Skips `.git`
+/// (Source is a git working tree). Idempotent: a file is only (re)written when its
+/// content differs from what's already at the target path.
 ///
 /// The first time a given path is applied, pre-existing content at that path is backed
 /// up and the Application Log records it as overwritten; a path with no prior content
 /// is recorded as created. Once a path is logged, later applies never re-back-up or
 /// re-classify it.
-pub fn apply(source: &Path, target: &Path) -> Result<(), String> {
-    render(source, target).map_err(|e| e.to_string())
+pub fn apply(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Result<(), String> {
+    render(source, target, get_passphrase).map_err(|e| e.to_string())
 }
 
-fn render(source: &Path, target: &Path) -> io::Result<()> {
+fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Result<(), String> {
     let log = AppLog::open(target);
-    for entry in walk_files(source)? {
-        let relative = entry.strip_prefix(source).expect("entry is under source");
-        let dest = target.join(relative);
-        let first_touch = !log.is_managed(relative)?;
+    for entry in walk_files(source).map_err(|e| e.to_string())? {
+        let source_relative = entry.strip_prefix(source).expect("entry is under source");
+        let is_secret = secret::is_secret(source_relative);
+        let relative: PathBuf = if is_secret {
+            secret::strip_suffix(source_relative)
+        } else {
+            source_relative.to_path_buf()
+        };
+        let dest = target.join(&relative);
+        let first_touch = !log.is_managed(&relative).map_err(|e| e.to_string())?;
         let backup = if first_touch && dest.exists() {
-            Some(back_up(&log, target, relative, &dest)?)
+            Some(back_up(&log, target, &relative, &dest).map_err(|e| e.to_string())?)
         } else {
             None
         };
 
-        copy_if_changed(&entry, &dest)?;
+        if is_secret {
+            let ciphertext = fs::read(&entry).map_err(|e| e.to_string())?;
+            let passphrase = get_passphrase()?;
+            let plaintext = secret::decrypt(&ciphertext, &passphrase)?;
+            secret::write_restricted(&dest, &plaintext).map_err(|e| e.to_string())?;
+        } else {
+            copy_if_changed(&entry, &dest).map_err(|e| e.to_string())?;
+        }
 
         // Only recorded once the real write above has succeeded, so the log never
         // claims a path was created/overwritten when it wasn't actually written.
         if first_touch {
             match backup {
-                Some(backup_relative) => log.record_overwritten(relative, &backup_relative)?,
-                None => log.record_created(relative)?,
+                Some(backup_relative) => {
+                    log.record_overwritten(&relative, &backup_relative).map_err(|e| e.to_string())?
+                }
+                None => log.record_created(&relative).map_err(|e| e.to_string())?,
             }
         }
     }

@@ -3,6 +3,7 @@ use mysh::config::Config;
 use mysh::diff;
 use mysh::reset;
 use mysh::save;
+use mysh::secret;
 use std::io;
 use std::process::ExitCode;
 
@@ -17,29 +18,35 @@ fn main() -> ExitCode {
 
     match command.as_str() {
         "apply" => match Config::resolve(rest) {
-            Ok(config) => match apply::apply(&config.source_dir, &config.target_dir) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) => {
-                    eprintln!("{e}");
-                    ExitCode::FAILURE
+            Ok(config) => {
+                let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
+                match apply::apply(&config.source_dir, &config.target_dir, &mut get_passphrase) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::FAILURE
+                    }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             }
         },
         "diff" => match Config::resolve(rest) {
-            Ok(config) => match diff::diff(&config.source_dir, &config.target_dir) {
-                Ok(drifts) => {
-                    print!("{}", diff::format_drifts(&drifts));
-                    ExitCode::SUCCESS
+            Ok(config) => {
+                let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
+                match diff::diff(&config.source_dir, &config.target_dir, &mut get_passphrase) {
+                    Ok(drifts) => {
+                        print!("{}", diff::format_drifts(&drifts));
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::FAILURE
+                    }
                 }
-                Err(e) => {
-                    eprintln!("{e}");
-                    ExitCode::FAILURE
-                }
-            },
+            }
             Err(e) => {
                 eprintln!("{e}");
                 ExitCode::FAILURE
@@ -49,7 +56,8 @@ fn main() -> ExitCode {
             Ok(config) => {
                 let stdin = io::stdin();
                 let mut input = stdin.lock();
-                match save::save(&config.source_dir, &config.target_dir, &mut input) {
+                let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
+                match save::save(&config.source_dir, &config.target_dir, &mut input, &mut get_passphrase) {
                     Ok(msg) => {
                         print!("{msg}");
                         ExitCode::SUCCESS
@@ -69,7 +77,8 @@ fn main() -> ExitCode {
             Ok(config) => {
                 let stdin = io::stdin();
                 let mut input = stdin.lock();
-                match reset::reset(&config.source_dir, &config.target_dir, &mut input) {
+                let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
+                match reset::reset(&config.source_dir, &config.target_dir, &mut input, &mut get_passphrase) {
                     Ok(msg) => {
                         print!("{msg}");
                         ExitCode::SUCCESS
