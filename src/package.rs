@@ -80,9 +80,9 @@ pub fn install_eager(source: &Path, target: &Path, log: &AppLog) -> Result<(), S
     if eager.is_empty() {
         return Ok(());
     }
-    mise::ensure_installed(log)?;
+    let mise_bin = mise::ensure_installed(target, log)?;
     for package in &eager {
-        mise::install(target, &package.specifier)?;
+        mise::install(&mise_bin, target, &package.specifier)?;
         log.record_package_installed(&package.specifier).map_err(|e| e.to_string())?;
     }
     Ok(())

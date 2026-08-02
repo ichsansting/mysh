@@ -74,9 +74,10 @@ impl AppLog {
         ))
     }
 
-    /// Records that this device didn't already have `mise` and mysh installed it.
-    pub fn record_mise_bootstrapped(&self) -> io::Result<()> {
-        self.append("mise-bootstrapped\n")
+    /// Records that this device didn't already have `mise`, and mysh installed it at
+    /// `install_path` — what lets `teardown` later delete exactly that file.
+    pub fn record_mise_bootstrapped(&self, install_path: &Path) -> io::Result<()> {
+        self.append(&format!("mise-bootstrapped\t{}\n", install_path.to_string_lossy()))
     }
 
     /// Records that mysh installed `specifier` via `mise` — what lets `teardown` later

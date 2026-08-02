@@ -40,32 +40,12 @@ fn run_apply(source: &Path, target: &Path, path_env: &str) -> std::process::Outp
         .expect("failed to run mysh apply")
 }
 
-/// A fake `curl` that, instead of hitting the real network, writes a fake `mise`
-/// executable into `stub_dir` (already on `PATH`) — simulating `mise`'s official
-/// `curl -fsSL https://mise.run | sh` installer without any real download.
-fn write_fake_curl(stub_dir: &Path) {
-    let script = format!(
-        r#"#!/bin/sh
-cat > "{stub}/mise" <<'MISE'
-#!/bin/sh
-echo "$@" >> "{stub}/mise.calls"
-case "$1" in
-  --version) exit 0 ;;
-esac
-exit 0
-MISE
-chmod +x "{stub}/mise"
-"#,
-        stub = stub_dir.display()
-    );
-    write_executable(&stub_dir.join("curl"), &script);
-}
-
-/// A fake `mise` that's already "installed": `--version` succeeds, and `install
-/// <specifier>` records the call and drops a runnable stub binary for the specifier's
-/// default bin name, so a test can prove the package is runnable after `apply`.
-fn write_fake_mise(stub_dir: &Path) {
-    let script = format!(
+/// The body shared by every fake `mise`: `--version` succeeds, and `install <specifier>`
+/// records the call (to `stub_dir/mise.calls`) and drops a runnable stub binary for the
+/// specifier's default bin name, so a test can prove the package is runnable after
+/// `apply`.
+fn mise_stub_script(stub_dir: &Path) -> String {
+    format!(
         r#"#!/bin/sh
 echo "$@" >> "{stub}/mise.calls"
 case "$1" in
@@ -82,8 +62,32 @@ esac
 exit 0
 "#,
         stub = stub_dir.display()
+    )
+}
+
+/// A fake `mise` that's already "installed" and on `PATH`.
+fn write_fake_mise(stub_dir: &Path) {
+    write_executable(&stub_dir.join("mise"), &mise_stub_script(stub_dir));
+}
+
+/// A fake `curl` that, instead of hitting the real network, writes a fake `mise`
+/// executable to `$MISE_INSTALL_PATH` — simulating the official `curl -fsSL
+/// https://mise.run | sh` installer (which does exactly this: write one binary to that
+/// path, nothing else) without any real download. `stub_dir` is only where the fake
+/// `mise`'s own bookkeeping (`mise.calls`, installed-tool stubs) lives — independent of
+/// wherever `MISE_INSTALL_PATH` ends up.
+fn write_fake_curl(stub_dir: &Path) {
+    let script = format!(
+        r#"#!/bin/sh
+install_path="${{MISE_INSTALL_PATH:-$HOME/.local/bin/mise}}"
+mkdir -p "$(dirname "$install_path")"
+cat > "$install_path" <<'MISE_STUB_EOF'
+{inner}MISE_STUB_EOF
+chmod +x "$install_path"
+"#,
+        inner = mise_stub_script(stub_dir)
     );
-    write_executable(&stub_dir.join("mise"), &script);
+    write_executable(&stub_dir.join("curl"), &script);
 }
 
 #[test]
@@ -98,15 +102,49 @@ fn apply_bootstraps_missing_mise_and_logs_it() {
     let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 
+    // Bootstrap must land at a deterministic, mysh-owned path (not wherever the
+    // installer's own default happens to be) so `teardown` can delete exactly this file.
+    let expected_mise_path = target.join(".mysh/bin/mise");
     let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
-    assert!(log_text.contains("mise-bootstrapped\n"), "log was: {log_text:?}");
-
-    assert!(stub_dir.join("mise").exists(), "bootstrap must install a `mise` binary");
+    assert!(
+        log_text.contains(&format!("mise-bootstrapped\t{}\n", expected_mise_path.display())),
+        "log was: {log_text:?}"
+    );
+    assert!(expected_mise_path.exists(), "bootstrap must install `mise` at the mysh-owned path");
 
     let mise_calls = fs::read_to_string(stub_dir.join("mise.calls")).unwrap();
     assert!(
         mise_calls.contains("install widget@1.0"),
         "eager package must be installed right after bootstrap, calls were: {mise_calls:?}"
+    );
+}
+
+#[test]
+fn second_apply_reuses_bootstrapped_mise_without_reinvoking_installer() {
+    let source = temp_dir("package-source-idempotent");
+    let target = temp_dir("package-target-idempotent");
+    let stub_dir = temp_dir("package-stub-idempotent");
+
+    fs::write(source.join(".packages"), "widget@1.0\teager\n").unwrap();
+    write_fake_curl(&stub_dir);
+
+    let first = run_apply(&source, &target, &stub_path_env(&stub_dir));
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    assert!(target.join(".mysh/bin/mise").exists());
+
+    // Remove the fake `curl`: with `mise` already bootstrapped at the deterministic
+    // owned path from the first run, `ensure_installed` must resolve it directly and
+    // never fall back to re-running the (now-missing) installer.
+    fs::remove_file(stub_dir.join("curl")).unwrap();
+
+    let second = run_apply(&source, &target, &stub_path_env(&stub_dir));
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+
+    let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
+    assert_eq!(
+        log_text.matches("mise-bootstrapped").count(),
+        1,
+        "must not re-bootstrap on a second apply, log was: {log_text:?}"
     );
 }
 
