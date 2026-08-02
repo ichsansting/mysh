@@ -29,19 +29,23 @@ impl Config {
     pub fn resolve(args: &[String]) -> Result<Config, String> {
         let flags = parse_flags(args)?;
 
-        let source_dir = resolve_var(flags.source_dir, "MYSH_SOURCE_DIR")
-            .ok_or("SOURCE_DIR must be set via --source-dir or MYSH_SOURCE_DIR")?;
-
         let target_dir = resolve_var(flags.target_dir, "MYSH_TARGET_DIR")
             .or_else(|| env::var("HOME").ok())
             .ok_or("TARGET_DIR must be set via --target-dir, MYSH_TARGET_DIR, or $HOME")?;
+        let target_dir = PathBuf::from(target_dir);
+
+        // Mirrors bootstrap.sh's own SOURCE_DIR default, so a stock bootstrap
+        // leaves every command runnable with no flags and no env vars.
+        let source_dir = resolve_var(flags.source_dir, "MYSH_SOURCE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| target_dir.join(".mysh/source"));
 
         let remote_url = resolve_var(flags.remote_url, "MYSH_REMOTE_URL");
         let passphrase = resolve_var(flags.passphrase, "MYSH_PASSPHRASE");
 
         Ok(Config {
-            source_dir: PathBuf::from(source_dir),
-            target_dir: PathBuf::from(target_dir),
+            source_dir,
+            target_dir,
             remote_url,
             passphrase,
         })
@@ -103,9 +107,16 @@ mod tests {
             env::remove_var("MYSH_PASSPHRASE");
         }
 
-        // Missing SOURCE_DIR (no flag, no env) is an error.
-        let err = Config::resolve(&[]).unwrap_err();
-        assert!(err.contains("SOURCE_DIR"));
+        // Missing SOURCE_DIR (no flag, no env) defaults to TARGET_DIR/.mysh/source,
+        // mirroring bootstrap.sh's own convention — no hard error post-bootstrap.
+        // Regression coverage for the previous hard-fail: target_dir actually has
+        // .mysh/source on disk here, the exact post-bootstrap state.
+        let target_dir = env::temp_dir().join("mysh-config-test-post-bootstrap");
+        std::fs::create_dir_all(target_dir.join(".mysh/source")).unwrap();
+        let args = vec!["--target-dir".to_string(), target_dir.to_string_lossy().into_owned()];
+        let config = Config::resolve(&args).unwrap();
+        assert_eq!(config.source_dir, target_dir.join(".mysh/source"));
+        std::fs::remove_dir_all(&target_dir).ok();
 
         // Env var fills in when no flag is given.
         unsafe { env::set_var("MYSH_SOURCE_DIR", "/from/env") };

@@ -4,10 +4,15 @@
 
 **Blocked by:** 01 — Scaffold + plain-file Apply, 10 — Bootstrap one-liner
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `Config::resolve` defaults `source_dir` to `target_dir.join(".mysh/source")` when neither `--source-dir` nor `MYSH_SOURCE_DIR` is set, matching `bootstrap.sh`'s own convention
-- [ ] Explicit `--source-dir`/`MYSH_SOURCE_DIR` still override the default, unchanged
-- [ ] After a simulated bootstrap (clone into the default location, binary on `PATH`), running `mysh apply`, `mysh diff`, `mysh save`, `mysh reset`, and `mysh teardown` each succeed with **no flags and no env vars set**
-- [ ] A regression test asserts the previous behavior (hard error with no default) is gone — a fresh `Config::resolve` with no flags/env set, run against a `target_dir` that has `.mysh/source`, resolves without error
-- [ ] Sweep `CONTEXT.md`/`docs/adr` for any other place "easy to use / minimal to remember" was asserted only in prose, and either turn it into a checked acceptance criterion here or note explicitly that it's already satisfied and why (as this ticket does for `REMOTE_URL`, package shim `PATH` placement, and the passphrase prompt)
+- [x] `Config::resolve` defaults `source_dir` to `target_dir.join(".mysh/source")` when neither `--source-dir` nor `MYSH_SOURCE_DIR` is set, matching `bootstrap.sh`'s own convention — `src/config.rs`, `resolve` now resolves `target_dir` first and derives the default from it.
+- [x] Explicit `--source-dir`/`MYSH_SOURCE_DIR` still override the default, unchanged — covered by `resolve_precedence_and_validation`.
+- [x] After a simulated bootstrap (clone into the default location, binary on `PATH`), running `mysh apply`, `mysh diff`, `mysh save`, `mysh reset`, and `mysh teardown` each succeed with **no flags and no env vars set** — `tests/zero_flag_integration.rs`, `every_documented_command_succeeds_post_bootstrap_with_no_flags_or_env` (env-cleared, only `HOME`/`PATH` set).
+- [x] A regression test asserts the previous behavior (hard error with no default) is gone — `src/config.rs`, `resolve_precedence_and_validation`'s first case, against a `target_dir` with an actual `.mysh/source` on disk.
+- [x] Swept `CONTEXT.md`/`docs/adr`/`spec.md` for other "easy to use / minimal to remember" claims asserted only in prose. Findings:
+  - **`REMOTE_URL`** (spec.md user stories 1–2, "don't have to remember or type more than one address"): satisfied by design, not by this ticket. `bootstrap.sh` hardcodes the repo's own `REMOTE_URL` as an in-file default (the "EDIT ME" line) — a real deployment never needs `--remote-url`/`MYSH_REMOTE_URL` at all. `Config.remote_url` itself is parsed but unused by any daily command (`apply`/`diff`/`save`/`reset` all resolve the remote through `Source`'s own git config, via `git::upstream_ref`, once it's cloned) — it exists purely as the injectable testing seam spec.md ¶79 describes, not a knob a user must set.
+  - **Package shim `PATH` placement** (spec.md user story 31, "type a lazy tool's normal command name... transparently install itself"): satisfied by design. `mise::bin_dir(target)` (where `package::apply` writes lazy shims) is the exact same `$TARGET_DIR/.mysh/bin` that `bootstrap.sh` already adds to the rc file's `PATH` — no separate registration or PATH edit needed per package.
+  - **Passphrase prompt** (spec.md user story 19, "prompted... only when a command actually needs to decrypt something"): satisfied by design. `secret::passphrase_provider` prompts interactively on first actual use with no flag/env required, and commands that touch no `Secret` never call it.
+  - **Directory-mode/file-mode tracking, fragment auto-pickup, mise self-bootstrap** (spec.md user stories 14–15, 25, 33 — "no manifest to remember", "no registration step", "don't have to separately remember to bootstrap"): all satisfied structurally by the naming-convention-only repo layout (spec.md "Repo layout") and `mise::ensure`'s auto-install — no flags or env vars involved.
+  - No other prose-only "easy to use" claim was found without either an existing checked requirement elsewhere (the bootstrap one-liner itself, issue 10) or a structural guarantee as above — `source_dir` defaulting was the one real gap, now closed by this ticket.
