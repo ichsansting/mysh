@@ -50,10 +50,10 @@ The marker file that turns on Directory-mode tracking for the directory it lives
 A CLI tool/binary managed via `mise`, installed into an isolated, mysh-owned prefix so it can be cleanly removed. Not a system package (library, GUI app, compiler) — those are out of scope, see ADR-0005.
 
 **Eager package**:
-A Package installed immediately during Apply.
+A Package installed immediately during Apply. Like every Package, it also gets a generated shim (see Lazy package) so its plain binary name resolves on `PATH` right after Apply — `mise install` alone doesn't do that.
 
 **Lazy package**:
-A Package not installed until first invoked, via a generated shim — a thin wrapper script in the isolated prefix that calls `mise x <specifier>@<version> -- <bin_name>`.
+A Package not installed until first invoked, via a generated shim — a thin wrapper script in the isolated prefix that calls `mise x <specifier>@<version> -- <bin_name>`. Eager packages get the same shim, just pointed at an already-installed tool; eager vs. lazy only changes *when* the install happens, not whether a shim exists.
 
 **Application Log**:
 The per-device record of everything mysh has done to that machine: every file it created vs. overwrote (with the original backed up), every Package installed, every PATH/rc-file line it added, and the bootstrap installer's own footprint. What makes Teardown possible.

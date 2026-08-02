@@ -232,6 +232,47 @@ fn apply_installs_eager_package_via_mise_and_it_is_runnable() {
 }
 
 #[test]
+fn eager_package_shim_is_generated_and_reachable_on_the_bootstrap_path() {
+    let source = temp_dir("package-source-eager-shim");
+    let target = temp_dir("package-target-eager-shim");
+    let stub_dir = temp_dir("package-stub-eager-shim");
+
+    fs::write(source.join(".packages"), "widget@1.0\teager\n").unwrap();
+    write_fake_mise(&stub_dir);
+    let path_env = stub_path_env(&stub_dir);
+
+    let output = run_apply(&source, &target, &path_env);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    // Reachable via the same shim mechanism lazy packages use (install-time coverage is
+    // `apply_installs_eager_package_via_mise_and_it_is_runnable`), so a plain
+    // command-name lookup against `.mysh/bin` (the directory `bootstrap.sh` puts on
+    // `PATH`) resolves it, instead of only the install-time stub_dir the test harness
+    // happens to control.
+    let shim = target.join(".mysh/bin/widget");
+    assert!(shim.exists(), "eager package must also get a shim, not just an install");
+    let run = Command::new(&shim).env("PATH", &path_env).output().unwrap();
+    assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "ran-widget");
+}
+
+#[test]
+fn both_eager_and_lazy_packages_get_a_shim_after_apply() {
+    let source = temp_dir("package-source-mixed-shims");
+    let target = temp_dir("package-target-mixed-shims");
+    let stub_dir = temp_dir("package-stub-mixed-shims");
+
+    fs::write(source.join(".packages"), "widget@1.0\teager\nelio@1.0\tlazy\n").unwrap();
+    write_fake_mise(&stub_dir);
+
+    let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    assert!(target.join(".mysh/bin/widget").exists(), "eager package must get a shim");
+    assert!(target.join(".mysh/bin/elio").exists(), "lazy package must get a shim");
+}
+
+#[test]
 fn dot_packages_file_is_never_rendered_to_target() {
     let source = temp_dir("package-source-not-rendered");
     let target = temp_dir("package-target-not-rendered");

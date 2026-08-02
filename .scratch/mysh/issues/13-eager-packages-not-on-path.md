@@ -6,11 +6,11 @@
 
 **Blocked by:** 08 — Packages: eager install via mise, 09 — Packages: lazy install via shims
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Decide the fix shape: either (a) have `package::apply` also write a lazy-style shim for every eager package's binary name (simplest — reuses the existing, working mechanism, at the cost of an extra shim-exec hop even though the tool is already installed), or (b) add `target/.mysh/mise/shims` to `PATH` in `bootstrap.sh` and have `mise::install` run with mise's shim-generation enabled, or (c) run `mise activate` in the fish fragment instead of relying on `PATH` edits from `bootstrap.sh` at all.
-- [ ] Whichever shape is chosen, add a test asserting that after `apply`, an eager package's binary name is actually resolvable via the same `PATH` state `bootstrap.sh` establishes — the current test suite only asserts `mise install` was invoked, not that the result is reachable.
-- [ ] Update `docs/adr` or `spec.md` if the chosen fix changes how `Application Log`/`teardown` need to track the new PATH-exposure mechanism (e.g. a shim now exists for eager packages too, not just lazy ones).
+- [x] Decide the fix shape: (a) — `package::apply` now writes a shim for every declared package regardless of classification, reusing the existing lazy-shim mechanism. Eager packages still install during `apply`; their shim's first real invocation just hits an already-installed tool.
+- [x] Added `eager_package_shim_is_generated_and_reachable_on_the_bootstrap_path` and `both_eager_and_lazy_packages_get_a_shim_after_apply` in `tests/package_integration.rs`, asserting the eager package's shim actually runs via `Command`, not just that `mise install` was called.
+- [x] Updated `CONTEXT.md`'s Eager/Lazy package definitions to note both classifications get a shim; the distinction is only *when* install happens. No `teardown` changes needed — the existing sweep of `.mysh/bin` already removes shims for both.
 
 **Found while:** seeding `ichsansting/dotfiles` (a real mysh `Source` repo, ported from a prior tool's profile) — every one of its ~38 declared tools ended up `lazy` specifically to sidestep this bug, since `eager` currently can't be relied on to actually work.
 
@@ -36,10 +36,10 @@ Every declared package — eager or lazy — is reachable under its plain binary
 - The shim-generation helper itself needs no behavioral change — it already takes a specifier and binary name and produces a self-contained script; it just needs to be invoked for eager packages too.
 
 **Acceptance criteria:**
-- [ ] After `apply`, an eager package's binary name is actually executable via the same `PATH` state the lazy path establishes — assert by invoking the resolved binary, not just asserting the install command was called
-- [ ] Lazy packages continue to defer installation to first invocation, unchanged
-- [ ] Eager packages still install during `apply` itself, not deferred
-- [ ] A package declared eager and a package declared lazy both end up with a generated shim after `apply`
+- [x] After `apply`, an eager package's binary name is actually executable via the same `PATH` state the lazy path establishes — assert by invoking the resolved binary, not just asserting the install command was called
+- [x] Lazy packages continue to defer installation to first invocation, unchanged
+- [x] Eager packages still install during `apply` itself, not deferred
+- [x] A package declared eager and a package declared lazy both end up with a generated shim after `apply`
 
 **Out of scope:**
 - Adding any new `PATH` management to the bootstrap installer — the bin directory both classifications shim into is already on `PATH`

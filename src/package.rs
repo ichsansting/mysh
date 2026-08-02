@@ -21,8 +21,10 @@ pub struct Package {
     /// The binary name this specifier produces. Defaults from `specifier` when not
     /// explicitly declared.
     pub bin_name: String,
-    /// Installed immediately during `apply` (`true`) vs. on first invocation via a
-    /// generated shim (`false`, see issue 09).
+    /// Whether the install cost is paid immediately during `apply` (`true`) or deferred to
+    /// first invocation (`false`, see issue 09). Both classifications get a generated shim
+    /// on `PATH` after `apply` (see issue 13) — this only changes *when* `mise install`
+    /// runs, not whether the tool ends up reachable under its plain binary name.
     pub eager: bool,
 }
 
@@ -72,12 +74,16 @@ fn default_bin_name(specifier: &str) -> String {
     rest.rsplit('/').next().unwrap_or(rest).to_string()
 }
 
-/// Installs every eager package and generates a shim for every lazy package declared in
-/// `source`'s `.packages` file, self-bootstrapping `mise` first if it isn't already
+/// Installs every eager package immediately and generates a shim for every declared
+/// package, eager and lazy alike, self-bootstrapping `mise` first if it isn't already
 /// present. A no-op — `mise` is never touched — only when no packages of either kind are
 /// declared at all: a lazy-only device still resolves/bootstraps `mise` up front (without
 /// installing the lazy tools themselves) so each generated shim has a concrete `mise` to
-/// invoke on first real use, rather than hoping one turns up on `PATH` later.
+/// invoke on first real use, rather than hoping one turns up on `PATH` later. Every
+/// package gets a shim (not just lazy ones) because `mise install` alone doesn't put
+/// anything on `PATH` — mise's own shim/activation mechanism depends on a config file mysh
+/// doesn't write (see issue 13) — so the shim is the only thing that makes an eager
+/// package's plain binary name resolvable after `apply`, same as it already does for lazy.
 pub fn apply(source: &Path, target: &Path, log: &AppLog) -> Result<(), String> {
     let packages = load(source)?;
     if packages.is_empty() {
@@ -90,15 +96,12 @@ pub fn apply(source: &Path, target: &Path, log: &AppLog) -> Result<(), String> {
         log.record_package_installed(&package.specifier).map_err(|e| e.to_string())?;
     }
 
-    let lazy: Vec<&Package> = packages.iter().filter(|p| !p.eager).collect();
-    if !lazy.is_empty() {
-        let bin_dir = mise::bin_dir(target);
-        fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
-        for package in lazy {
-            let shim = shim_script(&mise_bin, target, &package.specifier, &package.bin_name);
-            write_if_changed_executable(&bin_dir.join(&package.bin_name), &shim)
-                .map_err(|e| e.to_string())?;
-        }
+    let bin_dir = mise::bin_dir(target);
+    fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
+    for package in &packages {
+        let shim = shim_script(&mise_bin, target, &package.specifier, &package.bin_name);
+        write_if_changed_executable(&bin_dir.join(&package.bin_name), &shim)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

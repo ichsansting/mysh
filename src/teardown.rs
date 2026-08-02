@@ -60,9 +60,9 @@ pub fn teardown(target: &Path, input: &mut dyn BufRead) -> Result<String, String
         }
     }
 
-    // Whatever mysh-owned residue remains — lazy-package shims, the log itself, the
-    // backups dir, a default-location Source clone — lives entirely under
-    // `target/.mysh`, so one final sweep guarantees no residue survives.
+    // Whatever mysh-owned residue remains — package shims (eager and lazy alike), the
+    // log itself, the backups dir, a default-location Source clone — lives entirely
+    // under `target/.mysh`, so one final sweep guarantees no residue survives.
     remove_dir_if_exists(&target.join(".mysh"))?;
 
     Ok("torn down\n".to_string())
