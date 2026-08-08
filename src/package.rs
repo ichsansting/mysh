@@ -18,9 +18,16 @@ pub struct Package {
     /// A `mise`-compatible specifier: bare (`go@latest`) or backend-prefixed
     /// (`github:owner/repo@version`, `npm:pkg@version`, ...).
     pub specifier: String,
-    /// The binary name this specifier produces. Defaults from `specifier` when not
-    /// explicitly declared.
+    /// The name the generated shim is exposed under on `PATH`. Defaults from `specifier`
+    /// when not explicitly declared.
     pub bin_name: String,
+    /// The binary name actually passed to `mise x <specifier> -- <name>` — i.e. the name
+    /// the specifier's install really produces. Defaults to `bin_name` when not separately
+    /// declared, which is correct whenever the two coincide; only needs to differ when the
+    /// exposed shim name is deliberately not the tool's own binary name (e.g. installing
+    /// under an alias to avoid colliding with a differently-sourced package of the same
+    /// tool).
+    pub invoke_name: String,
     /// Whether the install cost is paid immediately during `apply` (`true`) or deferred to
     /// first invocation (`false`, see issue 09). Both classifications get a generated shim
     /// on `PATH` after `apply` (see issue 13) — this only changes *when* `mise install`
@@ -39,7 +46,8 @@ pub fn load(source: &Path) -> Result<Vec<Package>, String> {
     text.lines().filter(|line| !line.trim().is_empty()).map(parse_line).collect()
 }
 
-/// One package per line, tab-separated: `<specifier>\t<eager|lazy>[\t<bin_name>]`.
+/// One package per line, tab-separated:
+/// `<specifier>\t<eager|lazy>[\t<bin_name>[\t<invoke_name>]]`.
 fn parse_line(line: &str) -> Result<Package, String> {
     let mut fields = line.split('\t');
     let specifier = fields
@@ -61,7 +69,11 @@ fn parse_line(line: &str) -> Result<Package, String> {
         Some(name) if !name.is_empty() => name.to_string(),
         _ => default_bin_name(&specifier),
     };
-    Ok(Package { specifier, bin_name, eager })
+    let invoke_name = match fields.next() {
+        Some(name) if !name.is_empty() => name.to_string(),
+        _ => bin_name.clone(),
+    };
+    Ok(Package { specifier, bin_name, invoke_name, eager })
 }
 
 /// The binary name a specifier produces when not explicitly overridden: any backend
@@ -99,7 +111,7 @@ pub fn apply(source: &Path, target: &Path, log: &AppLog) -> Result<(), String> {
     let bin_dir = mise::bin_dir(target);
     fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
     for package in &packages {
-        let shim = shim_script(&mise_bin, target, &package.specifier, &package.bin_name);
+        let shim = shim_script(&mise_bin, target, &package.specifier, &package.invoke_name);
         write_if_changed_executable(&bin_dir.join(&package.bin_name), &shim)
             .map_err(|e| e.to_string())?;
     }
@@ -107,14 +119,14 @@ pub fn apply(source: &Path, target: &Path, log: &AppLog) -> Result<(), String> {
 }
 
 /// A lazy package's shim: installs (on first use) and execs the real tool via
-/// `mise x <specifier> -- <bin_name> "$@"`, using the exact `mise` binary `apply` already
+/// `mise x <specifier> -- <invoke_name> "$@"`, using the exact `mise` binary `apply` already
 /// resolved (bare `mise` when system-wide, so future `PATH` lookups keep working; an
 /// absolute owned path when mysh bootstrapped it, so the shim doesn't depend on that path
 /// being on `PATH` by the time it's actually run) and scoped to the same isolated
 /// `MISE_DATA_DIR` eager installs use.
-fn shim_script(mise_bin: &Path, target: &Path, specifier: &str, bin_name: &str) -> String {
+fn shim_script(mise_bin: &Path, target: &Path, specifier: &str, invoke_name: &str) -> String {
     format!(
-        "#!/bin/sh\nexport MISE_DATA_DIR=\"{}\"\nexec \"{}\" x {specifier} -- {bin_name} \"$@\"\n",
+        "#!/bin/sh\nexport MISE_DATA_DIR=\"{}\"\nexec \"{}\" x {specifier} -- {invoke_name} \"$@\"\n",
         mise::data_dir(target).display(),
         mise_bin.display(),
     )
@@ -159,14 +171,31 @@ mod tests {
     #[test]
     fn parse_line_defaults_bin_name_when_not_declared() {
         let pkg = parse_line("go@latest\teager").unwrap();
-        assert_eq!(pkg, Package { specifier: "go@latest".to_string(), bin_name: "go".to_string(), eager: true });
+        assert_eq!(
+            pkg,
+            Package {
+                specifier: "go@latest".to_string(),
+                bin_name: "go".to_string(),
+                invoke_name: "go".to_string(),
+                eager: true,
+            }
+        );
     }
 
     #[test]
     fn parse_line_honors_explicit_bin_name_override() {
         let pkg = parse_line("github:elio-fm/elio@latest\tlazy\telio-cli").unwrap();
         assert_eq!(pkg.bin_name, "elio-cli");
+        assert_eq!(pkg.invoke_name, "elio-cli");
         assert!(!pkg.eager);
+    }
+
+    #[test]
+    fn parse_line_honors_explicit_invoke_name_distinct_from_bin_name() {
+        let pkg =
+            parse_line("npm:@anthropic-ai/claude-code@latest\tlazy\tclauden\tclaude").unwrap();
+        assert_eq!(pkg.bin_name, "clauden");
+        assert_eq!(pkg.invoke_name, "claude");
     }
 
     #[test]
