@@ -1,10 +1,18 @@
-# global mise settings (merged with the session's root mise.toml [tools]
-# table, which ghosh itself renders from every component's ToolSpec entries)
+# global mise settings only — tool installs are handled by .packages' lazy
+# shims, not by a [tools] table here.
 # ponytail: setting keys below match mise's docs as of this writing — mise's
 # settings surface has moved before; re-check `mise settings ls` if one of
 # these no longer applies.
+[env.UV_PYTHON]
+tools = true
+value = "{{ tools.python.path }}"
+
 [settings]
 auto_install = true
 idiomatic_version_file_enable_tools = ["python", "terraform"]
-python_venv_auto_create = true
-pipx_uvx = true
+
+[settings.pipx]
+uvx = true
+
+[settings.python]
+uv_venv_auto = "source"

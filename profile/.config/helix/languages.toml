@@ -1,6 +1,18 @@
-# rust-analyzer is intentionally NOT configured here — it ships with the
-# rust toolchain via mise, so its version always matches rustc's; helix
-# picks it up from PATH with no entry needed.
+[[language]]
+name = "nix"
+language-servers = ["nixd"]
+auto-format = true
+formatter = { command = "nixfmt" }
+
+[language-server.nixd]
+command = "nixd"
+
+[language-server.rust-analyzer]
+command = "rust-analyzer"
+
+[[language]]
+name = "rust"
+language-servers = ["rust-analyzer"]
 
 [language-server.bash-language-server]
 command = "bash-language-server"
@@ -37,9 +49,9 @@ language-servers = ["typescript-language-server"]
 name = "javascript"
 language-servers = ["typescript-language-server"]
 
-[language-server.ruff]
+[language-server.ruff-lsp]
 command = "ruff"
-args = ["server"]
+args = ["server", "--preview"]
 
 [language-server.ty]
 command = "ty"
@@ -47,6 +59,6 @@ args = ["server"]
 
 [[language]]
 name = "python"
-language-servers = ["ty", "ruff"]
+language-servers = ["ty", "ruff-lsp"]
 formatter = { command = "ruff", args = ["format", "-"] }
 auto-format = true

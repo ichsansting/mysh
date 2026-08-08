@@ -6,6 +6,9 @@
 [commit]
 	gpgsign = true
 
+[tag]
+	gpgsign = true
+
 [gpg]
 	format = ssh
 
@@ -20,3 +23,11 @@
 
 [core]
 	excludesfile = ~/.config/git/ignore
+
+[credential "https://github.com"]
+	helper = ""
+	helper = gh auth git-credential
+
+[credential "https://gist.github.com"]
+	helper = ""
+	helper = gh auth git-credential

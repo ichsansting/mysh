@@ -1,2 +1,4 @@
+aliases: {}
 git_protocol: ssh
 editor: hx
+version: '1'
