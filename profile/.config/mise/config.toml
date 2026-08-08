@@ -5,7 +5,7 @@
 # these no longer applies.
 [env.UV_PYTHON]
 tools = true
-value = "{{ tools.python.path }}"
+value = "{% if tools.python is defined %}{{ tools.python.path }}{% endif %}"
 
 [settings]
 auto_install = true
