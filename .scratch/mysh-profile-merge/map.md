@@ -50,6 +50,9 @@ investigation.
 - [Migrate profile/ and rewire bootstrap.sh](issues/04-migrate-and-rewire.md) — done;
   also fixed a real `git.rs` bug the subdirectory shape exposed (`add -A`/`git show`
   were repo-root-scoped, not source-dir-scoped).
+- [Flip ichsansting/mysh to public](issues/05-flip-visibility.md) — pre-flip check
+  found no secrets outside `.age` files (none exist yet); user confirmed; repo is now
+  public.
 
 ## Not yet specified
 
