@@ -14,6 +14,7 @@ claude-code@latest	lazy	claude
 aube@latest	lazy	aube
 github:iii-hq/iii@latest	lazy	iii
 cargo:elio@latest	lazy	elio
+aqua:fish-shell/fish-shell@latest	eager	fish
 starship@latest	lazy	starship
 atuin@latest	lazy	atuin
 zoxide@latest	lazy	zoxide
