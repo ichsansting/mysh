@@ -1,0 +1,10 @@
+default_shell "fish"
+mouse_mode true
+theme "catppuccin-mocha"
+
+keybinds {
+    shared_except "locked" {
+        unbind "Alt f"
+        unbind "Alt Right"
+    }
+}

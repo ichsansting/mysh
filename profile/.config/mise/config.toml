@@ -1,0 +1,10 @@
+# global mise settings (merged with the session's root mise.toml [tools]
+# table, which ghosh itself renders from every component's ToolSpec entries)
+# ponytail: setting keys below match mise's docs as of this writing — mise's
+# settings surface has moved before; re-check `mise settings ls` if one of
+# these no longer applies.
+[settings]
+auto_install = true
+idiomatic_version_file_enable_tools = ["python", "terraform"]
+python_venv_auto_create = true
+pipx_uvx = true

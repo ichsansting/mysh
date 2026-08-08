@@ -34,11 +34,17 @@ impl Config {
             .ok_or("TARGET_DIR must be set via --target-dir, MYSH_TARGET_DIR, or $HOME")?;
         let target_dir = PathBuf::from(target_dir);
 
-        // Mirrors bootstrap.sh's own SOURCE_DIR default, so a stock bootstrap
-        // leaves every command runnable with no flags and no env vars.
+        // Mirrors bootstrap.sh's own `--source-dir` handoff value (its SOURCE_DIR var
+        // is the sparse-clone root; this is that root's `profile/` subdirectory,
+        // where the actual Source content lives), so a stock bootstrap leaves every
+        // command runnable with no flags and no env vars. Note: MYSH_SOURCE_DIR means
+        // slightly different things in the two processes — bootstrap.sh's shell var
+        // of that name is the clone root, this env var is the final git-operations
+        // directory — because bootstrap.sh always derives one from the other. An
+        // override here must point at the `profile/` directory itself.
         let source_dir = resolve_var(flags.source_dir, "MYSH_SOURCE_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|| target_dir.join(".mysh/source"));
+            .unwrap_or_else(|| target_dir.join(".mysh/source/profile"));
 
         let remote_url = resolve_var(flags.remote_url, "MYSH_REMOTE_URL");
         let passphrase = resolve_var(flags.passphrase, "MYSH_PASSPHRASE");
@@ -107,15 +113,16 @@ mod tests {
             env::remove_var("MYSH_PASSPHRASE");
         }
 
-        // Missing SOURCE_DIR (no flag, no env) defaults to TARGET_DIR/.mysh/source,
-        // mirroring bootstrap.sh's own convention — no hard error post-bootstrap.
-        // Regression coverage for the previous hard-fail: target_dir actually has
-        // .mysh/source on disk here, the exact post-bootstrap state.
+        // Missing SOURCE_DIR (no flag, no env) defaults to
+        // TARGET_DIR/.mysh/source/profile, mirroring bootstrap.sh's handoff value —
+        // no hard error post-bootstrap. Regression coverage for the previous
+        // hard-fail: target_dir actually has .mysh/source/profile on disk here, the
+        // exact post-bootstrap state.
         let target_dir = env::temp_dir().join("mysh-config-test-post-bootstrap");
-        std::fs::create_dir_all(target_dir.join(".mysh/source")).unwrap();
+        std::fs::create_dir_all(target_dir.join(".mysh/source/profile")).unwrap();
         let args = vec!["--target-dir".to_string(), target_dir.to_string_lossy().into_owned()];
         let config = Config::resolve(&args).unwrap();
-        assert_eq!(config.source_dir, target_dir.join(".mysh/source"));
+        assert_eq!(config.source_dir, target_dir.join(".mysh/source/profile"));
         std::fs::remove_dir_all(&target_dir).ok();
 
         // Env var fills in when no flag is given.

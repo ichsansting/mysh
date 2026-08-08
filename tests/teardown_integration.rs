@@ -192,7 +192,11 @@ fn init_bare_remote_with_files(files: &[(&str, &[u8])]) -> std::path::PathBuf {
     let remote_url = format!("file://{}", remote.to_string_lossy());
     Command::new("git").args(["clone", &remote_url]).arg(&seed).status().unwrap();
     for (relative, content) in files {
-        fs::write(seed.join(relative), content).unwrap();
+        let dest = seed.join(relative);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&dest, content).unwrap();
     }
     Command::new("git").current_dir(&seed).args(["add", "-A"]).status().unwrap();
     Command::new("git")
@@ -242,8 +246,8 @@ fn full_bootstrap_to_teardown_cycle_leaves_no_residue() {
     fs::write(target.join("gitconfig"), b"pre-existing content\n").unwrap();
 
     let remote = init_bare_remote_with_files(&[
-        ("gitconfig", b"[user]\n\tname = Test\n"),
-        ("newfile", b"fresh content\n"),
+        ("profile/gitconfig", b"[user]\n\tname = Test\n"),
+        ("profile/newfile", b"fresh content\n"),
     ]);
     let remote_url = format!("file://{}", remote.to_string_lossy());
 

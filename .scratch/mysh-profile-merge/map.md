@@ -47,6 +47,9 @@ investigation.
 - [Asterisk-masked passphrase prompt](issues/07-passphrase-masking.md) — `rpassword`
   (already pinned) supports this natively via `ConfigBuilder::password_feedback_mask`;
   no new dependency, one-line fix in `passphrase_provider`.
+- [Migrate profile/ and rewire bootstrap.sh](issues/04-migrate-and-rewire.md) — done;
+  also fixed a real `git.rs` bug the subdirectory shape exposed (`add -A`/`git show`
+  were repo-root-scoped, not source-dir-scoped).
 
 ## Not yet specified
 

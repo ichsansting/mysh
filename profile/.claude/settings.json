@@ -1,0 +1,22 @@
+{
+  "model": "opusplan",
+  "theme": "dark",
+  "enabledPlugins": {
+    "ponytail@ponytail": true,
+    "svelte@svelte": true
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    },
+    "svelte": {
+      "source": {
+        "source": "github",
+        "repo": "sveltejs/ai-tools"
+      }
+    }
+  }
+}

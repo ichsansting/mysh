@@ -1,0 +1,52 @@
+# rust-analyzer is intentionally NOT configured here — it ships with the
+# rust toolchain via mise, so its version always matches rustc's; helix
+# picks it up from PATH with no entry needed.
+
+[language-server.bash-language-server]
+command = "bash-language-server"
+args = ["start"]
+
+[[language]]
+name = "bash"
+language-servers = ["bash-language-server"]
+
+[language-server.fish-lsp]
+command = "fish-lsp"
+args = ["start"]
+
+[[language]]
+name = "fish"
+language-servers = ["fish-lsp"]
+
+[language-server.markdown-oxide]
+command = "markdown-oxide"
+
+[[language]]
+name = "markdown"
+language-servers = ["markdown-oxide"]
+
+[language-server.typescript-language-server]
+command = "typescript-language-server"
+args = ["--stdio"]
+
+[[language]]
+name = "typescript"
+language-servers = ["typescript-language-server"]
+
+[[language]]
+name = "javascript"
+language-servers = ["typescript-language-server"]
+
+[language-server.ruff]
+command = "ruff"
+args = ["server"]
+
+[language-server.ty]
+command = "ty"
+args = ["server"]
+
+[[language]]
+name = "python"
+language-servers = ["ty", "ruff"]
+formatter = { command = "ruff", args = ["format", "-"] }
+auto-format = true

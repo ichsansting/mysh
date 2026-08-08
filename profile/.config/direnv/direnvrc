@@ -1,0 +1,7 @@
+# nix-direnv, if it's on the system — falls back to plain direnv silently
+# if the package isn't installed (no hard dependency on a nix store path).
+if has nix_direnv_version 2>/dev/null; then
+  : # already loaded
+elif [ -f "${XDG_CACHE_HOME:-$HOME/.cache}/direnv/nix-direnv.sh" ]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/direnv/nix-direnv.sh"
+fi

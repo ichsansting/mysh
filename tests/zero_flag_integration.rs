@@ -19,7 +19,11 @@ fn init_bare_remote_with_file(relative: &str, content: &[u8]) -> std::path::Path
     let seed = temp_dir("zero-flag-seed");
     let remote_url = format!("file://{}", remote.to_string_lossy());
     git::clone(&remote_url, &seed).unwrap();
-    fs::write(seed.join(relative), content).unwrap();
+    let dest = seed.join(relative);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(&dest, content).unwrap();
     git::commit(&seed, "seed").unwrap();
     git::push(&seed).unwrap();
 
@@ -53,11 +57,13 @@ fn run_zero_flag(home: &Path, args: &[&str], stdin: &str) -> Output {
 #[test]
 fn every_documented_command_succeeds_post_bootstrap_with_no_flags_or_env() {
     let home = temp_dir("zero-flag-home");
-    // Mirrors bootstrap.sh's own SOURCE_DIR default exactly.
-    let source = home.join(".mysh/source");
-    let remote = init_bare_remote_with_file("bashrc", b"export EDITOR=vim\n");
+    // Mirrors bootstrap.sh's own SOURCE_DIR default exactly: the clone root holds
+    // `profile/`, and config.rs's default source_dir is that clone root's `profile/`.
+    let clone_root = home.join(".mysh/source");
+    let source = clone_root.join("profile");
+    let remote = init_bare_remote_with_file("profile/bashrc", b"export EDITOR=vim\n");
     let remote_url = format!("file://{}", remote.to_string_lossy());
-    git::clone(&remote_url, &source).unwrap();
+    git::clone(&remote_url, &clone_root).unwrap();
 
     let apply_out = run_zero_flag(&home, &["apply"], "");
     assert!(apply_out.status.success(), "apply: {}", String::from_utf8_lossy(&apply_out.stderr));

@@ -1,0 +1,22 @@
+[user]
+	name = Ichsan Sting
+	email = 139094570+ichsansting@users.noreply.github.com
+	signingkey = ~/.ssh/id_ed25519
+
+[commit]
+	gpgsign = true
+
+[gpg]
+	format = ssh
+
+[gpg "ssh"]
+	allowedSignersFile = ~/.ssh/allowed_signers
+
+[pull]
+	rebase = true
+
+[init]
+	defaultBranch = main
+
+[core]
+	excludesfile = ~/.config/git/ignore

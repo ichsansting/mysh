@@ -21,7 +21,11 @@ fn init_bare_remote_with_file(relative: &str, content: &[u8]) -> std::path::Path
     let seed = temp_dir("bootstrap-seed");
     let remote_url = format!("file://{}", remote.to_string_lossy());
     Command::new("git").args(["clone", &remote_url]).arg(&seed).status().unwrap();
-    fs::write(seed.join(relative), content).unwrap();
+    let dest = seed.join(relative);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(&dest, content).unwrap();
     Command::new("git").current_dir(&seed).args(["add", "-A"]).status().unwrap();
     Command::new("git")
         .current_dir(&seed)
@@ -90,7 +94,7 @@ fn bootstrap_installs_binary_adds_path_clones_source_and_hands_off() {
     let target = temp_dir("bootstrap-target");
     let stub_dir = temp_dir("bootstrap-stub");
     let rc_file = target.join("rcfile");
-    let remote = init_bare_remote_with_file("bashrc", b"export EDITOR=vim\n");
+    let remote = init_bare_remote_with_file("profile/bashrc", b"export EDITOR=vim\n");
     let remote_url = format!("file://{}", remote.to_string_lossy());
 
     write_fake_curl(&stub_dir);
@@ -136,7 +140,7 @@ fn bootstrap_installs_binary_adds_path_clones_source_and_hands_off() {
 
     // Source cloned from the same repo, with the seeded content present.
     assert_eq!(
-        fs::read(target.join(".mysh/source/bashrc")).unwrap(),
+        fs::read(target.join(".mysh/source/profile/bashrc")).unwrap(),
         b"export EDITOR=vim\n"
     );
 
@@ -152,7 +156,7 @@ fn bootstrap_defaults_to_mysh_own_releases_repo_with_no_env_override() {
     let target = temp_dir("bootstrap-target-default-repo");
     let stub_dir = temp_dir("bootstrap-stub-default-repo");
     let rc_file = target.join("rcfile");
-    let remote = init_bare_remote_with_file("bashrc", b"export EDITOR=vim\n");
+    let remote = init_bare_remote_with_file("profile/bashrc", b"export EDITOR=vim\n");
     let remote_url = format!("file://{}", remote.to_string_lossy());
 
     write_fake_curl(&stub_dir);
@@ -174,7 +178,7 @@ fn rerunning_bootstrap_does_not_duplicate_the_path_line_or_log_entries() {
     let target = temp_dir("bootstrap-target-rerun");
     let stub_dir = temp_dir("bootstrap-stub-rerun");
     let rc_file = target.join("rcfile");
-    let remote = init_bare_remote_with_file("bashrc", b"export EDITOR=vim\n");
+    let remote = init_bare_remote_with_file("profile/bashrc", b"export EDITOR=vim\n");
     let remote_url = format!("file://{}", remote.to_string_lossy());
 
     write_fake_curl(&stub_dir);

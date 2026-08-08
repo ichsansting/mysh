@@ -1,18 +1,18 @@
 #!/bin/sh
-# bootstrap.sh — the one-line mysh installer, hosted at the root of a mysh-managed
-# dotfiles repo:
+# bootstrap.sh — the one-line mysh installer, hosted in the mysh repo itself:
 #
 #   curl -fsSL <raw-content-url-of-this-file> | sh
 #
 # Detects OS/architecture, downloads the matching prebuilt `mysh` binary from mysh's
-# own GitHub Releases, puts it on PATH, clones the repo this script lives in as
-# Source, then hands off to the binary to bootstrap `mise` and run the initial apply.
-# The only assumed pre-existing tools are `git` and `curl`.
+# own GitHub Releases, puts it on PATH, sparse-checks-out just the repo's `profile/`
+# directory as Source (skipping the Rust tool source), then hands off to the binary to
+# bootstrap `mise` and run the initial apply. The only assumed pre-existing tools are
+# `git` and `curl`.
 set -eu
 
-# EDIT ME: the dotfiles repo this script lives in — it gets cloned as Source.
-# Override with MYSH_REMOTE_URL instead of editing this file when testing.
-REMOTE_URL="${MYSH_REMOTE_URL:-https://github.com/CHANGE_ME/dotfiles}"
+# The repo holding both the mysh tool and the `profile/` Source directory.
+# Override with MYSH_REMOTE_URL only for testing against a different checkout.
+REMOTE_URL="${MYSH_REMOTE_URL:-https://github.com/ichsansting/mysh}"
 
 # Where mysh's own prebuilt binaries are published. Fixed mysh project infrastructure,
 # not a per-user setting — override with MYSH_RELEASES_REPO only for testing.
@@ -21,16 +21,6 @@ VERSION="${MYSH_VERSION:-latest}"
 
 TARGET_DIR="${MYSH_TARGET_DIR:-$HOME}"
 SOURCE_DIR="${MYSH_SOURCE_DIR:-$TARGET_DIR/.mysh/source}"
-
-# Matches on the placeholder text itself (not on whether MYSH_REMOTE_URL is set), so a
-# real deployment that edited the default in place above passes this check with no env
-# var needed — a single `curl -fsSL <url> | sh` must work standalone.
-case "$REMOTE_URL" in
-    *CHANGE_ME*)
-        echo "bootstrap.sh: set MYSH_REMOTE_URL, or edit the REMOTE_URL default at the top of this script, to your dotfiles repo" >&2
-        exit 1
-        ;;
-esac
 
 # --- Detect OS/architecture, map to the matching Rust target triple ---
 # Linux binaries are musl-linked (static, self-contained) — the asset name says so
@@ -85,10 +75,12 @@ if ! grep -qF "$path_line" "$rc_file" 2>/dev/null; then
 fi
 export PATH="$bin_dir:$PATH"
 
-# --- Clone Source ---
+# --- Clone Source: sparse checkout of just profile/, skipping the Rust tool source ---
 if [ ! -d "$SOURCE_DIR/.git" ]; then
-    git clone "$REMOTE_URL" "$SOURCE_DIR"
+    git clone --filter=blob:none --no-checkout "$REMOTE_URL" "$SOURCE_DIR"
+    git -C "$SOURCE_DIR" sparse-checkout set profile
+    git -C "$SOURCE_DIR" checkout
 fi
 
 # --- Hand off to the mysh binary: bootstrap mise, run the initial apply ---
-exec "$install_path" apply --source-dir "$SOURCE_DIR" --target-dir "$TARGET_DIR"
+exec "$install_path" apply --source-dir "$SOURCE_DIR/profile" --target-dir "$TARGET_DIR"
