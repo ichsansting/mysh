@@ -57,6 +57,42 @@ fn clone_commit_push_fetch_status_round_trip_against_real_git() {
     );
 }
 
+/// mysh's Source can be a subdirectory of a larger repo (e.g. `profile/` inside the
+/// mysh tool repo). `commit`/`show` must stay scoped to that subdirectory rather than
+/// leaking to or reading from the rest of the repo.
+#[test]
+fn commit_and_show_scope_to_a_subdirectory_source_dir() {
+    let remote = init_bare_remote();
+    let remote_url = format!("file://{}", remote.to_string_lossy());
+
+    let workdir = temp_dir("git-subdir-workdir");
+    let repo = workdir.join("repo");
+    git::clone(&remote_url, &repo).unwrap();
+    fs::create_dir_all(repo.join("profile")).unwrap();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("profile/bashrc"), b"export EDITOR=vim\n").unwrap();
+    fs::write(repo.join("src/main.rs"), b"fn main() {}\n").unwrap();
+    git::commit(&repo, "seed").unwrap();
+    git::push(&repo).unwrap();
+
+    let profile_dir = repo.join("profile");
+    fs::write(profile_dir.join("bashrc"), b"export EDITOR=nvim\n").unwrap();
+    fs::write(repo.join("src/main.rs"), b"fn main() { unrelated_edit(); }\n").unwrap();
+
+    git::commit(&profile_dir, "update bashrc").expect("commit scoped to profile/ should succeed");
+
+    assert!(
+        git::status(&repo).unwrap().contains("src/main.rs"),
+        "the unrelated src/ edit must stay uncommitted after a commit scoped to profile/"
+    );
+
+    let head = rev_parse(&repo, "HEAD");
+    let committed = git::show(&profile_dir, &head, std::path::Path::new("bashrc"))
+        .expect("show should resolve a subdir-relative path")
+        .expect("bashrc should exist at HEAD");
+    assert_eq!(committed, b"export EDITOR=nvim\n");
+}
+
 fn rev_parse(repo_dir: &std::path::Path, rev: &str) -> String {
     let output = Command::new("git")
         .current_dir(repo_dir)
