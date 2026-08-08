@@ -56,6 +56,9 @@ investigation.
 - [Confirm passphrase re-entry on first secret creation](issues/06-passphrase-confirm.md)
   — `add --secret` now prompts twice and loops on mismatch, but only when the
   passphrase wasn't already given via `--passphrase`/`MYSH_PASSPHRASE`.
+- [What happens to the old ichsansting/dotfiles repo](issues/08-old-repo-fate.md) —
+  deleted (content already migrated by ticket 04); `ichsansting/mysh`/`profile/` is
+  now the sole public source of truth.
 
 ## Not yet specified
 
