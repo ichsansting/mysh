@@ -11,6 +11,7 @@ bun@latest	lazy	bunx
 uv@latest	lazy	uv
 uv@latest	lazy	uvx
 claude-code@latest	lazy	claude
+npm:@anthropic-ai/claude-code@latest	lazy	clauden	claude
 aube@latest	lazy	aube
 github:iii-hq/iii@latest	lazy	iii
 cargo:elio@latest	lazy	elio
