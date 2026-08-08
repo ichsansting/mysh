@@ -2,7 +2,7 @@ use crate::apply::walk_files;
 use crate::confirm::confirm;
 use crate::diff::matches_ignore;
 use crate::package;
-use crate::secret::{self, PassphraseFn};
+use crate::secret;
 use std::fs;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -105,7 +105,7 @@ pub fn add(
     target: &Path,
     flags: AddFlags,
     input: &mut dyn BufRead,
-    get_passphrase: &mut PassphraseFn,
+    passphrase: Option<String>,
 ) -> Result<String, String> {
     let resolved = resolve_path(target, &flags.path);
 
@@ -127,7 +127,7 @@ pub fn add(
         }
         folder_add(source, target, &relative, &flags.ignore, input)
     } else {
-        file_add(source, target, &relative, flags.secret, get_passphrase)
+        file_add(source, target, &relative, flags.secret, passphrase)
     }
 }
 
@@ -190,7 +190,7 @@ fn file_add(
     target: &Path,
     relative: &Path,
     secret_flag: bool,
-    get_passphrase: &mut PassphraseFn,
+    passphrase: Option<String>,
 ) -> Result<String, String> {
     if let Some(existing) = existing_source_path(source, relative) {
         return Err(format!(
@@ -202,7 +202,8 @@ fn file_add(
 
     let content = fs::read(target.join(relative)).map_err(|e| e.to_string())?;
     let (source_relative, to_write) = if secret_flag {
-        (with_age_suffix(relative), secret::encrypt(&content, &get_passphrase()?)?)
+        let passphrase = secret::new_secret_passphrase(&passphrase)?;
+        (with_age_suffix(relative), secret::encrypt(&content, &passphrase)?)
     } else {
         (relative.to_path_buf(), content)
     };

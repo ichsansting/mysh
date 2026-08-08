@@ -101,8 +101,7 @@ fn main() -> ExitCode {
                 Ok(config) => {
                     let stdin = io::stdin();
                     let mut input = stdin.lock();
-                    let mut get_passphrase = secret::passphrase_provider(config.passphrase.clone());
-                    match add::add(&config.source_dir, &config.target_dir, flags, &mut input, &mut get_passphrase) {
+                    match add::add(&config.source_dir, &config.target_dir, flags, &mut input, config.passphrase.clone()) {
                         Ok(msg) => {
                             print!("{msg}");
                             ExitCode::SUCCESS

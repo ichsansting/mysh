@@ -33,6 +33,26 @@ pub fn passphrase_provider(configured: Option<String>) -> impl FnMut() -> Result
     }
 }
 
+/// Resolves the passphrase for a *new* Secret being created (`add --secret`): if
+/// `configured` (from `--passphrase`/`MYSH_PASSPHRASE`) is set, it's used as-is — it
+/// wasn't typed blind, so there's nothing for re-entry to catch. Otherwise prompts twice
+/// and loops until both entries match, so a typo at creation time is caught immediately
+/// instead of surfacing later as an undecryptable file.
+pub fn new_secret_passphrase(configured: &Option<String>) -> Result<String, String> {
+    if let Some(p) = configured {
+        return Ok(p.clone());
+    }
+    loop {
+        let entered = rpassword::prompt_password("mysh passphrase: ").map_err(|e| e.to_string())?;
+        let confirmed =
+            rpassword::prompt_password("confirm passphrase: ").map_err(|e| e.to_string())?;
+        if entered == confirmed {
+            return Ok(entered);
+        }
+        eprintln!("passphrases didn't match, try again");
+    }
+}
+
 /// Whether a Source-relative path names a `Secret` (a file ending in `.age`).
 pub fn is_secret(relative: &Path) -> bool {
     relative.extension().is_some_and(|ext| ext == SUFFIX)

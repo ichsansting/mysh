@@ -53,6 +53,9 @@ investigation.
 - [Flip ichsansting/mysh to public](issues/05-flip-visibility.md) — pre-flip check
   found no secrets outside `.age` files (none exist yet); user confirmed; repo is now
   public.
+- [Confirm passphrase re-entry on first secret creation](issues/06-passphrase-confirm.md)
+  — `add --secret` now prompts twice and loops on mismatch, but only when the
+  passphrase wasn't already given via `--passphrase`/`MYSH_PASSPHRASE`.
 
 ## Not yet specified
 
