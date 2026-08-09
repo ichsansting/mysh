@@ -59,6 +59,10 @@ investigation.
 - [What happens to the old ichsansting/dotfiles repo](issues/08-old-repo-fate.md) —
   deleted (content already migrated by ticket 04); `ichsansting/mysh`/`profile/` is
   now the sole public source of truth.
+- [Create and push the real secrets](issues/09-create-real-secrets.md) — SSH key,
+  GitHub token, Claude OAuth token added via `mysh add --secret` and pushed to
+  `origin/main` (`7431eb3`) via plain git, not `mysh save` (which would've needed
+  the passphrase again just to diff, with no drift to actually capture).
 
 ## Not yet specified
 
