@@ -25,7 +25,22 @@ Before implementing:
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-## 3. Goal-Driven Execution
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code, mention anything you notice below. Don't act on it unless asked:
+- Improvement opportunity in adjacent code, comments, or formatting
+- Refactor opportunity
+- A better approach than the existing style/pattern
+- Unrelated/pre-existing dead code
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+
+The test: Every changed line should trace directly to the user's request or approval.
+
+## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
