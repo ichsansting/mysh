@@ -1,5 +1,6 @@
-# global mise settings only — tool installs are handled by .packages' lazy
-# shims, not by a [tools] table here.
+# [tools] here declares eager packages (installed during `apply`, exposed on PATH via
+# mise's own shim mechanism); lazy packages are real shim files in ../../.mysh/bin
+# instead (see docs/adr/0006 in the mysh repo).
 # ponytail: setting keys below match mise's docs as of this writing — mise's
 # settings surface has moved before; re-check `mise settings ls` if one of
 # these no longer applies.
@@ -16,3 +17,14 @@ uvx = true
 
 [settings.python]
 uv_venv_auto = "source"
+
+[tools]
+"aqua:fish-shell/fish-shell" = "latest"
+starship = "latest"
+atuin = "latest"
+zoxide = "latest"
+direnv = "latest"
+fzf = "latest"
+zellij = "latest"
+gh = "latest"
+eza = "latest"

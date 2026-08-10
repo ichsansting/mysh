@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use support::temp_dir;
+use support::{temp_dir, write_fake_mise};
 
 const PASSPHRASE: &str = "correct horse battery staple";
 
@@ -147,7 +147,8 @@ fn secret_flag_combined_with_a_package_specifier_errors_and_writes_nothing() {
 
     let output = run_add(&source, &target, &["go@latest", "--secret", "--passphrase", PASSPHRASE], None);
     assert!(!output.status.success());
-    assert!(!source.join(".packages").exists());
+    assert!(!source.join(".mysh").exists());
+    assert!(!source.join(".config/mise/config.toml").exists());
 }
 
 #[test]
@@ -225,41 +226,116 @@ fn folder_add_on_already_tracked_directory_errors_without_modifying_source() {
     assert!(!source.join("plugins/a.conf").exists());
 }
 
+fn run_add_with_path(source: &Path, target: &Path, extra_args: &[&str], path_env: &str) -> std::process::Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mysh"));
+    cmd.arg("add");
+    for a in extra_args {
+        cmd.arg(a);
+    }
+    cmd.arg("--source-dir").arg(source);
+    cmd.arg("--target-dir").arg(target);
+    cmd.env("PATH", path_env);
+    cmd.output().expect("failed to run mysh add")
+}
+
 #[test]
-fn package_add_defaults_to_lazy_and_appends_declaration_line() {
+fn package_add_defaults_to_lazy_and_writes_a_real_portable_shim_file() {
     let source = temp_dir("add-pkg-source");
     let target = temp_dir("add-pkg-target");
 
     let output = run_add(&source, &target, &["go@latest"], None);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(fs::read_to_string(source.join(".packages")).unwrap(), "go@latest\tlazy\n");
+
+    let shim = source.join(".mysh/bin/go");
+    assert_eq!(
+        fs::read_to_string(&shim).unwrap(),
+        "#!/bin/sh\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x go@latest -- go \"$@\"\n"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&shim).unwrap().permissions().mode();
+        assert_eq!(mode & 0o111, 0o111, "shim must be executable");
+    }
 }
 
 #[test]
-fn package_add_honors_eager_and_bin_overrides() {
+fn package_add_lazy_honors_bin_override() {
+    let source = temp_dir("add-pkg-bin-source");
+    let target = temp_dir("add-pkg-bin-target");
+
+    let output = run_add(&source, &target, &["github:elio-fm/elio@latest", "--bin", "elio-cli"], None);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    assert!(!source.join(".mysh/bin/elio").exists());
+    assert_eq!(
+        fs::read_to_string(source.join(".mysh/bin/elio-cli")).unwrap(),
+        "#!/bin/sh\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x github:elio-fm/elio@latest -- elio-cli \"$@\"\n"
+    );
+}
+
+#[test]
+fn package_add_eager_declares_via_mise_config_set_and_touches_only_source() {
     let source = temp_dir("add-pkg-eager-source");
     let target = temp_dir("add-pkg-eager-target");
+    let stub_dir = temp_dir("add-pkg-eager-stub");
+    write_fake_mise(&stub_dir);
+    let path_env = format!("{}:{}", stub_dir.display(), std::env::var("PATH").unwrap());
 
-    let output = run_add(
-        &source,
-        &target,
-        &["github:elio-fm/elio@latest", "--eager", "--bin", "elio-cli"],
-        None,
-    );
+    let output = run_add_with_path(&source, &target, &["github:elio-fm/elio@latest", "--eager"], &path_env);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
     assert_eq!(
-        fs::read_to_string(source.join(".packages")).unwrap(),
-        "github:elio-fm/elio@latest\teager\telio-cli\n"
+        fs::read_to_string(source.join(".config/mise/config.toml")).unwrap(),
+        "\n[tools]\n\"github:elio-fm/elio\" = \"latest\"\n"
     );
+    // `add` never touches Target — no `.mysh` state, no rendered config, nothing.
+    assert!(!target.join(".mysh").exists());
+    assert!(!target.join(".config").exists());
 }
 
 #[test]
-fn package_add_on_duplicate_specifier_errors_without_modifying_declarations() {
+fn package_add_bin_flag_combined_with_eager_errors() {
+    let source = temp_dir("add-pkg-eager-bin-source");
+    let target = temp_dir("add-pkg-eager-bin-target");
+    let stub_dir = temp_dir("add-pkg-eager-bin-stub");
+    write_fake_mise(&stub_dir);
+    let path_env = format!("{}:{}", stub_dir.display(), std::env::var("PATH").unwrap());
+
+    let output = run_add_with_path(&source, &target, &["go@latest", "--eager", "--bin", "go2"], &path_env);
+    assert!(!output.status.success());
+    assert!(!source.join(".config/mise/config.toml").exists());
+}
+
+#[test]
+fn package_add_eager_without_a_resolvable_mise_errors_clearly() {
+    let source = temp_dir("add-pkg-no-mise-source");
+    let target = temp_dir("add-pkg-no-mise-target");
+    // No fake `mise` on `PATH` at all, and none previously bootstrapped in `target`.
+    let path_env = std::env::var("PATH")
+        .unwrap()
+        .split(':')
+        .filter(|dir| !Path::new(dir).join("mise").exists())
+        .collect::<Vec<_>>()
+        .join(":");
+
+    let output = run_add_with_path(&source, &target, &["go@latest", "--eager"], &path_env);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("apply"));
+    assert!(!source.join(".config/mise/config.toml").exists());
+}
+
+#[test]
+fn package_add_on_duplicate_lazy_specifier_errors_without_modifying_source() {
     let source = temp_dir("add-pkg-dup-source");
     let target = temp_dir("add-pkg-dup-target");
-    fs::write(source.join(".packages"), b"go@latest\tlazy\n").unwrap();
 
-    let output = run_add(&source, &target, &["go@latest", "--eager"], None);
+    let first = run_add(&source, &target, &["go@latest"], None);
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    let before = fs::read_to_string(source.join(".mysh/bin/go")).unwrap();
+
+    let output = run_add(&source, &target, &["go@latest", "--bin", "go2"], None);
     assert!(!output.status.success());
-    assert_eq!(fs::read_to_string(source.join(".packages")).unwrap(), "go@latest\tlazy\n");
+    assert!(!source.join(".mysh/bin/go2").exists());
+    assert_eq!(fs::read_to_string(source.join(".mysh/bin/go")).unwrap(), before);
 }

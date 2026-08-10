@@ -22,11 +22,8 @@ pub fn apply(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) ->
 
 fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Result<(), String> {
     let log = AppLog::open(target);
-    for entry in walk_files(source).map_err(|e| e.to_string())? {
+    for entry in walk_source_files(source).map_err(|e| e.to_string())? {
         let source_relative = entry.strip_prefix(source).expect("entry is under source");
-        if source_relative == Path::new(package::DECLARATIONS_FILE) {
-            continue;
-        }
         let is_secret = secret::is_secret(source_relative);
         let relative: PathBuf = if is_secret {
             secret::strip_suffix(source_relative)
@@ -52,7 +49,7 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
         let relative = fragment::target_name(&fragment_dir);
         let content = fragment::render(&source.join(&fragment_dir), get_passphrase)?;
         apply_one(&log, target, &relative, |dest| {
-            write_if_changed(dest, &content).map_err(|e| e.to_string())
+            write_if_changed(dest, &content, false).map_err(|e| e.to_string())
         })?;
     }
 
@@ -111,29 +108,45 @@ fn back_up(
 }
 
 /// Whether `name` is one of mysh's own internal directories (`.git`, the Source
-/// working tree's VCS dir; `.mysh`, mysh's state dir under Target) — never user
-/// content, so never walked by `walk_files` or `diff`'s directory-mode tracking.
+/// working tree's VCS dir; `.mysh`, mysh's *generated runtime state* under Target —
+/// bootstrap binaries, the Application Log, `mise`'s isolated data dir) — never user
+/// content when walking `Target`, so never walked there by `walk_files` or `diff`'s
+/// directory-mode tracking. Does *not* apply to `Source`'s own `.mysh/bin/` (real,
+/// git-tracked lazy-package shims — see ADR-0006), which is why `walk_source_files`
+/// exists as a separate entry point that skips only `.git`.
 pub(crate) fn is_internal_dir_name(name: Option<&str>) -> bool {
     matches!(name, Some(".git") | Some(".mysh"))
 }
 
 /// Recursively lists files under `dir`, skipping `.git`/`.mysh` and not descending into
-/// `Fragment` directories (`<name>.d/`, handled separately as a composed unit). Shared
-/// with `diff`, which also needs the set of plain files Source/Target currently have on
-/// disk.
+/// `Fragment` directories (`<name>.d/`, handled separately as a composed unit). For
+/// walking `Target` (or a `.track`-marked subdirectory of it) — `.mysh` there is always
+/// mysh's own generated state, never something to discover as trackable content. Use
+/// `walk_source_files` for `Source`.
 pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+    walk(dir, true)
+}
+
+/// Like `walk_files`, but for walking `Source`: never skips `.mysh`, since
+/// `Source`'s `.mysh/bin/` holds real, git-tracked lazy-package shims that must be
+/// rendered/diffed like any other tracked file (see ADR-0006). Still skips `.git`
+/// (Source's own VCS directory) and doesn't descend into `Fragment` directories.
+pub(crate) fn walk_source_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
+    walk(dir, false)
+}
+
+fn walk(dir: &Path, skip_mysh: bool) -> io::Result<Vec<std::path::PathBuf>> {
     let mut files = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            if is_internal_dir_name(path.file_name().and_then(|n| n.to_str()))
-                || fragment::is_fragment_dir(&path)
-            {
+            let name = path.file_name().and_then(|n| n.to_str());
+            if name == Some(".git") || (skip_mysh && name == Some(".mysh")) || fragment::is_fragment_dir(&path) {
                 continue;
             }
-            files.extend(walk_files(&path)?);
+            files.extend(walk(&path, skip_mysh)?);
         } else if file_type.is_file() {
             files.push(path);
         }
@@ -141,16 +154,45 @@ pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
     Ok(files)
 }
 
+/// Identity-copies `src` to `dest`, preserving `src`'s executable bit — needed since
+/// ADR-0006: a lazy package's shim is now an ordinary tracked file in Source, ferried
+/// to Target through this exact path, and it must stay executable to be runnable.
 fn copy_if_changed(src: &Path, dest: &Path) -> io::Result<()> {
-    write_if_changed(dest, &fs::read(src)?)
+    write_if_changed(dest, &fs::read(src)?, is_executable(src)?)
 }
 
-fn write_if_changed(dest: &Path, content: &[u8]) -> io::Result<()> {
+#[cfg(unix)]
+fn is_executable(path: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+    Ok(fs::metadata(path)?.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_path: &Path) -> io::Result<bool> {
+    Ok(false)
+}
+
+fn write_if_changed(dest: &Path, content: &[u8], executable: bool) -> io::Result<()> {
     if fs::read(dest).map(|existing| existing == content).unwrap_or(false) {
         return Ok(());
     }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(dest, content)
+    fs::write(dest, content)?;
+    if executable {
+        set_executable(dest)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_executable(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn set_executable(_path: &Path) -> io::Result<()> {
+    Ok(())
 }

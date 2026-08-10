@@ -3,7 +3,7 @@ mod support;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use support::{temp_dir, write_executable};
+use support::{temp_dir, write_executable, write_fake_curl};
 
 fn run_teardown(target: &Path, answer: &str) -> std::process::Output {
     run_teardown_with_path(target, answer, &std::env::var("PATH").unwrap())
@@ -90,44 +90,6 @@ fn teardown_on_a_device_mysh_never_touched_is_a_noop() {
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "nothing to tear down\n");
 }
 
-/// Same fake `mise` body used by `package_integration.rs`: `--version` succeeds, and
-/// `install <specifier>` records the call and drops a runnable stub binary.
-fn mise_stub_script(stub_dir: &Path) -> String {
-    format!(
-        r#"#!/bin/sh
-echo "$@" >> "{stub}/mise.calls"
-case "$1" in
-  --version) exit 0 ;;
-  install)
-    name=$(echo "$2" | sed -e 's/^[^:]*://' -e 's/@.*//' -e 's#.*/##')
-    cat > "{stub}/$name" <<BIN
-#!/bin/sh
-exit 0
-BIN
-    chmod +x "{stub}/$name"
-    ;;
-esac
-exit 0
-"#,
-        stub = stub_dir.display()
-    )
-}
-
-/// A fake `curl` standing in for the real `curl -fsSL https://mise.run | sh` installer:
-/// writes a fake `mise` to `$MISE_INSTALL_PATH` instead of hitting the network.
-fn write_fake_curl(stub_dir: &Path) {
-    let script = format!(
-        r#"#!/bin/sh
-install_path="${{MISE_INSTALL_PATH:-$HOME/.local/bin/mise}}"
-mkdir -p "$(dirname "$install_path")"
-cat > "$install_path" <<'MISE_STUB_EOF'
-{inner}MISE_STUB_EOF
-chmod +x "$install_path"
-"#,
-        inner = mise_stub_script(stub_dir)
-    );
-    write_executable(&stub_dir.join("curl"), &script);
-}
 
 fn real_path_without_mise() -> String {
     std::env::var("PATH")
@@ -148,7 +110,14 @@ fn teardown_uninstalls_packages_removes_bootstrapped_mise_and_lazy_shims() {
     // package (never installed, but its shim — the only file it leaves behind — must
     // still disappear on teardown, even though no Application Log entry tracks it
     // individually; see mise::data_dir/`.mysh` doc comments for why that's sufficient).
-    fs::write(source.join(".packages"), "widget@1.0\teager\ngadget@2.0\tlazy\n").unwrap();
+    // Real files now (see ADR-0006), written directly rather than through `add`.
+    fs::create_dir_all(source.join(".config/mise")).unwrap();
+    fs::write(source.join(".config/mise/config.toml"), "[tools]\nwidget = \"1.0\"\n").unwrap();
+    fs::create_dir_all(source.join(".mysh/bin")).unwrap();
+    write_executable(
+        &source.join(".mysh/bin/gadget"),
+        "#!/bin/sh\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x gadget@2.0 -- gadget \"$@\"\n",
+    );
     write_fake_curl(&stub_dir);
     let path_env = format!("{}:{}", stub_dir.display(), real_path_without_mise());
 
@@ -165,8 +134,10 @@ fn teardown_uninstalls_packages_removes_bootstrapped_mise_and_lazy_shims() {
 
     let owned_mise = target.join(".mysh/bin/mise");
     let lazy_shim = target.join(".mysh/bin/gadget");
+    let eager_shim = target.join(".mysh/mise/shims/widget");
     assert!(owned_mise.exists(), "setup must have bootstrapped an owned mise");
     assert!(lazy_shim.exists(), "setup must have generated the lazy package's shim");
+    assert!(eager_shim.exists(), "setup must have installed the eager package via mise's own shim mechanism");
     let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
     assert!(log_text.contains("package-installed\twidget@1.0\n"), "log was: {log_text:?}");
 
@@ -175,6 +146,7 @@ fn teardown_uninstalls_packages_removes_bootstrapped_mise_and_lazy_shims() {
 
     assert!(!owned_mise.exists(), "mysh-bootstrapped mise must be removed");
     assert!(!lazy_shim.exists(), "the lazy package's shim must be removed even though it's untracked by the log");
+    assert!(!eager_shim.exists(), "the eager package's mise-owned shim must be removed too");
     assert!(!target.join(".mysh/mise").exists(), "the isolated package data dir must be removed");
     assert!(!target.join(".mysh").exists(), "no mysh residue must remain");
 }

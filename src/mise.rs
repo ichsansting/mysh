@@ -15,8 +15,9 @@ fn system_mise_present() -> bool {
 }
 
 /// mysh's isolated, `PATH`-resident prefix: where its own bootstrapped `mise` binary
-/// lives, and where lazy-package shims (see `package::apply`) are generated so invoking
-/// a lazy tool's plain command name resolves to its shim.
+/// lives, and where lazy-package shims land — real files in Source, identity-copied
+/// here by ordinary Apply like any other tracked file (see ADR-0006) — so invoking a
+/// lazy tool's plain command name resolves to its shim.
 pub fn bin_dir(target: &Path) -> PathBuf {
     target.join(".mysh/bin")
 }
@@ -28,8 +29,12 @@ fn owned_mise_bin(target: &Path) -> PathBuf {
 
 /// The already-usable `mise` binary, if one exists: a pre-existing system-wide `mise`
 /// (never duplicated), or one mysh bootstrapped for this `target` in an earlier run.
-/// `None` means `ensure_installed` actually needs to install it.
-fn resolved_mise_bin(target: &Path) -> Option<PathBuf> {
+/// `None` means `ensure_installed` actually needs to install it. `pub(crate)` (rather
+/// than folded into `ensure_installed`) because `add`'s eager path needs this exact
+/// read-only resolution too: `add` never touches `Target` (see `add::package_add`), so
+/// it must never fall through to bootstrapping — only use `mise` if one is already
+/// resolvable.
+pub(crate) fn resolved_mise_bin(target: &Path) -> Option<PathBuf> {
     if system_mise_present() {
         return Some(PathBuf::from("mise"));
     }
@@ -67,17 +72,105 @@ pub fn data_dir(target: &Path) -> PathBuf {
     target.join(".mysh/mise")
 }
 
-/// Installs `specifier` via `mise install`, invoking the binary `ensure_installed`
-/// already resolved, scoped to `data_dir`.
-pub fn install(mise_bin: &Path, target: &Path, specifier: &str) -> Result<(), String> {
+/// Where mise's own config lives once rendered by ordinary Apply from
+/// `profile/.config/mise/config.toml` in Source — under `root` for any root (`target`
+/// during `apply`, `source` for `add`'s eager path, which only ever edits Source).
+/// Eager packages are declared in this file's `[tools]` table now, not in a
+/// mysh-owned declarations file (see ADR-0006).
+pub fn config_path(root: &Path) -> PathBuf {
+    root.join(".config/mise/config.toml")
+}
+
+/// Marks `config_path` trusted so `mise` will parse it without prompting — required
+/// for any config file outside its own default lookup locations (found live: even
+/// `config set`/`config get`/`install` against an explicit `--file` refuse to parse an
+/// untrusted one, e.g. `mise ERROR Config files in ... are not trusted`). Safe for
+/// mysh to do unconditionally here: this is always a path mysh itself renders from
+/// Source, content the user already authored and asked mysh to manage — no different
+/// in trust level from every other file mysh already renders and sources unsandboxed.
+fn trust(mise_bin: &Path, config_path: &Path) -> Result<(), String> {
     let status = Command::new(mise_bin)
-        .arg("install")
-        .arg(specifier)
-        .env("MISE_DATA_DIR", data_dir(target))
+        .arg("trust")
+        .arg(config_path)
         .status()
         .map_err(|e| e.to_string())?;
     if !status.success() {
-        return Err(format!("failed to install package {specifier}"));
+        return Err(format!("failed to trust config file {}", config_path.display()));
+    }
+    Ok(())
+}
+
+/// Installs every package declared in `target`'s rendered `config.toml` `[tools]`
+/// table in one call, scoped to the same isolated data/config dirs eager installs and
+/// lazy shims both rely on — so resolution is deterministic regardless of the ambient
+/// environment (e.g. in tests, where `target` isn't the real `$HOME`).
+pub fn install_declared(mise_bin: &Path, target: &Path) -> Result<(), String> {
+    trust(mise_bin, &config_path(target))?;
+    let status = Command::new(mise_bin)
+        .arg("install")
+        .env("MISE_DATA_DIR", data_dir(target))
+        .env("MISE_CONFIG_DIR", target.join(".config/mise"))
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("failed to install declared packages".to_string());
+    }
+    Ok(())
+}
+
+/// The specifiers declared in `config_path`'s `[tools]` table, reassembled as
+/// `<name>@<version>` (matching the specifier shape this codebase logs everywhere
+/// else, e.g. `widget@1.0`) — `install_declared` installs all of them in one call, so
+/// this is the only way to know which ones to individually record in the Application
+/// Log. An absent `[tools]` table (no eager packages declared at all) is empty, not an
+/// error.
+pub fn declared_tools(mise_bin: &Path, config_path: &Path) -> Result<Vec<String>, String> {
+    if !config_path.is_file() {
+        return Ok(Vec::new());
+    }
+    trust(mise_bin, config_path)?;
+    let output = Command::new(mise_bin)
+        .args(["config", "get", "tools", "--file"])
+        .arg(config_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(text
+        .lines()
+        .filter_map(|line| {
+            let (name, version) = line.split_once('=')?;
+            Some(format!("{}@{}", name.trim().trim_matches('"'), version.trim().trim_matches('"')))
+        })
+        .collect())
+}
+
+/// Declares `name` (a bare or backend-prefixed specifier, no `@version` suffix — split
+/// that out before calling) at `version` in `config_path`'s `[tools]` table via `mise
+/// config set`, creating the file first if it doesn't exist yet. Never installs
+/// anything — confirmed live that `config set` only edits the file — so it's safe for
+/// `add` to call without violating "`add` never touches `Target`".
+pub fn declare_tool(mise_bin: &Path, config_path: &Path, name: &str, version: &str) -> Result<(), String> {
+    if !config_path.is_file() {
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(config_path, "").map_err(|e| e.to_string())?;
+    }
+    trust(mise_bin, config_path)?;
+    let status = Command::new(mise_bin)
+        .arg("config")
+        .arg("set")
+        .arg(format!("tools.{name}"))
+        .arg(version)
+        .arg("--file")
+        .arg(config_path)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("failed to declare package {name}"));
     }
     Ok(())
 }

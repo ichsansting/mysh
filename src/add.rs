@@ -1,6 +1,7 @@
 use crate::apply::walk_files;
 use crate::confirm::confirm;
 use crate::diff::matches_ignore;
+use crate::mise;
 use crate::package;
 use crate::secret;
 use std::fs;
@@ -113,7 +114,13 @@ pub fn add(
         if flags.secret {
             return Err("--secret cannot be combined with a package specifier".to_string());
         }
-        return package_add(source, &flags.path, flags.eager.unwrap_or(false), flags.bin_name.as_deref());
+        return package_add(
+            source,
+            target,
+            &flags.path,
+            flags.eager.unwrap_or(false),
+            flags.bin_name.as_deref(),
+        );
     }
 
     let relative = resolved
@@ -278,27 +285,87 @@ fn matching_files(target_dir: &Path, ignore: &[String]) -> std::io::Result<Vec<P
     Ok(files)
 }
 
-fn package_add(source: &Path, specifier: &str, eager: bool, bin_name: Option<&str>) -> Result<String, String> {
-    if package::load(source)?.iter().any(|p| p.specifier == specifier) {
+/// Dispatches a package specifier to the lazy or eager path — the two no longer share
+/// a mechanism (see ADR-0006), so `--bin` (a lazy-only concept: it names the shim file
+/// `add` writes) is rejected outright for `--eager`, where `mise` resolves the binary
+/// name itself.
+fn package_add(
+    source: &Path,
+    target: &Path,
+    specifier: &str,
+    eager: bool,
+    bin_name: Option<&str>,
+) -> Result<String, String> {
+    if eager {
+        if bin_name.is_some() {
+            return Err("--bin has no effect with --eager; mise resolves the binary name itself".to_string());
+        }
+        eager_add(source, target, specifier)
+    } else {
+        lazy_add(source, specifier, bin_name)
+    }
+}
+
+/// Writes a real, portable shim file into Source at the mirrored path a lazy package's
+/// shim renders to (`.mysh/bin/<bin_name>`, see ADR-0006) — `add` never touches
+/// `Target`, so this only ever creates the file in Source; the next `apply` identity-
+/// copies it through like any other tracked file.
+fn lazy_add(source: &Path, specifier: &str, bin_name: Option<&str>) -> Result<String, String> {
+    let bin_name = bin_name.map(str::to_string).unwrap_or_else(|| package::default_bin_name(specifier));
+    let dest = mise::bin_dir(source).join(&bin_name);
+    if dest.exists() {
         return Err(format!(
-            "'{specifier}' is already declared in {}; edit that file directly instead",
-            package::DECLARATIONS_FILE
+            "'{bin_name}' is already declared as a lazy package in Source; edit '{}' directly instead",
+            dest.strip_prefix(source).unwrap_or(&dest).display()
         ));
     }
-
-    let mut line = format!("{specifier}\t{}", if eager { "eager" } else { "lazy" });
-    if let Some(bin) = bin_name {
-        line.push('\t');
-        line.push_str(bin);
+    if lazy_specifier_already_declared(source, specifier) {
+        return Err(format!("'{specifier}' is already declared as a lazy package in Source"));
     }
-    line.push('\n');
 
-    let path = source.join(package::DECLARATIONS_FILE);
-    let mut content = fs::read_to_string(&path).unwrap_or_default();
-    if !content.is_empty() && !content.ends_with('\n') {
-        content.push('\n');
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    content.push_str(&line);
-    fs::write(&path, content).map_err(|e| e.to_string())?;
-    Ok(format!("added '{specifier}'\n"))
+    let shim = package::shim_script(specifier, &bin_name);
+    package::write_if_changed_executable(&dest, &shim).map_err(|e| e.to_string())?;
+    Ok(format!("added '{specifier}' (lazy, as '{bin_name}')\n"))
+}
+
+/// Whether any existing lazy shim file in Source already execs `specifier` — a
+/// specifier-level duplicate check (not just a `bin_name` collision), matching this
+/// codebase's existing "one CLI-driven declaration per specifier" intent. A specifier
+/// deliberately exposed under a second `bin_name` (e.g. `rust@stable` as both `cargo`
+/// and `rustc`) still works, just not through this CLI — hand-add the second file
+/// directly, same as today.
+fn lazy_specifier_already_declared(source: &Path, specifier: &str) -> bool {
+    let needle = format!("x {specifier} -- ");
+    fs::read_dir(mise::bin_dir(source))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|entry| fs::read_to_string(entry.path()).map(|c| c.contains(&needle)).unwrap_or(false))
+}
+
+/// Declares `specifier` in Source's `config.toml` `[tools]` table via `mise config
+/// set` (see `mise::declare_tool`). Requires an already-resolvable `mise` — system-wide
+/// or previously bootstrapped by an earlier `apply` — rather than bootstrapping one
+/// itself, since bootstrapping writes into `Target` and `add` never touches `Target`.
+fn eager_add(source: &Path, target: &Path, specifier: &str) -> Result<String, String> {
+    let mise_bin = mise::resolved_mise_bin(target).ok_or_else(|| {
+        "no `mise` found (system-wide, or previously bootstrapped by `apply`) — run `apply` once \
+         first; `add` never installs anything into Target"
+            .to_string()
+    })?;
+
+    let (name, version) = specifier.rsplit_once('@').unwrap_or((specifier, "latest"));
+    let config_path = mise::config_path(source);
+    let already_declared = mise::declared_tools(&mise_bin, &config_path)?
+        .iter()
+        .any(|declared| declared.rsplit_once('@').map_or(declared.as_str(), |(n, _)| n) == name);
+    if already_declared {
+        return Err(format!("'{name}' is already declared as an eager package in Source's config.toml"));
+    }
+
+    mise::declare_tool(&mise_bin, &config_path, name, version)?;
+    Ok(format!("added '{specifier}' (eager)\n"))
 }

@@ -66,14 +66,20 @@ if [ -z "$rc_file" ]; then
     esac
 fi
 
-path_line="export PATH=\"$bin_dir:\$PATH\""
+# Two mysh-owned directories go on PATH: `.mysh/bin` (mysh owns every file in it — the
+# mysh/mise binaries plus lazy-package shims, real files identity-copied from Source)
+# and `.mysh/mise/shims` (mise owns this one entirely — it's regenerated wholesale on
+# every reshim, so mysh must never write into it directly; this is where eager
+# packages resolve, via mise's own native shim/activation mechanism, see ADR-0006).
+mise_shims_dir="$TARGET_DIR/.mysh/mise/shims"
+path_line="export PATH=\"$bin_dir:$mise_shims_dir:\$PATH\""
 if ! grep -qF "$path_line" "$rc_file" 2>/dev/null; then
     printf '\n# added by mysh bootstrap.sh\n%s\n' "$path_line" >> "$rc_file"
     if ! grep -qF "$(printf 'bootstrap-path-added\t%s\t%s' "$rc_file" "$path_line")" "$log_path" 2>/dev/null; then
         printf 'bootstrap-path-added\t%s\t%s\n' "$rc_file" "$path_line" >> "$log_path"
     fi
 fi
-export PATH="$bin_dir:$PATH"
+export PATH="$bin_dir:$mise_shims_dir:$PATH"
 
 # --- Clone Source: sparse checkout of just profile/, skipping the Rust tool source ---
 if [ ! -d "$SOURCE_DIR/.git" ]; then
