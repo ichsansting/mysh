@@ -1,9 +1,11 @@
 {
   "model": "opusplan",
   "theme": "dark",
+  "autoCompactEnabled": false,
   "enabledPlugins": {
     "ponytail@ponytail": true,
-    "svelte@svelte": true
+    "svelte@svelte": true,
+    "mattpocock-skills@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {
