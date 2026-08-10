@@ -11,7 +11,7 @@
 
 ## Technical & Coding Preferences
 - Lean on existing code patterns within the workspace before writing new utility logic.
-- Avoid introducing new runtime or dev dependencies unless explicitly requested.
+- Avoid introducing new runtime or dev dependencies unless approved.
 - Write defensive code with comprehensive error handling. Ensure async tasks handle exceptions correctly.
 
 ## Tooling & Workflow
