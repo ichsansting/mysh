@@ -2,7 +2,7 @@
 
 **Type:** task
 
-**Status:** claimed
+**Status:** resolved
 
 **Blocked by:** 04, 05, 09
 
@@ -39,6 +39,29 @@ Verified both directions — `rg --version` now runs clean, and `UV_PYTHON` stil
 resolves when python is the active tool. Fix applied to
 `profile/.config/mise/config.toml`.
 
-Still open: the full acceptance test (real `.age` secrets prompting/decrypting,
-ticket 09) hasn't run yet since real secrets don't exist in `profile/` — ticket 09
-is still open and this ticket remains blocked on it.
+Ticket 09 landed, unblocking the rest of this test. Ran `mysh apply` on this
+machine: all three secrets decrypted correctly — `~/.ssh/id_ed25519`,
+`~/.claude/.credentials.json`, `~/.config/gh/hosts.yml` all present, `gh auth
+status` confirmed the token valid.
+
+`mysh save` then failed with a `git push` username/password prompt. Root cause
+wasn't mysh: `~/.gitconfig`'s `credential.https://github.com.helper` (and the
+`gist.github.com` one) was set to the bare string `gh auth git-credential`,
+missing the leading `!`. Without `!`, git treats the value as
+`<name> <args>` and prepends `git-credential-` to only the first word —
+`git-credential-gh`, which doesn't exist — instead of running the whole thing
+as a shell command. Reproduced directly with `git push --dry-run`:
+`'credential-gh' is not a git command` → falls through to the disabled
+terminal-prompt fallback. Not a `mysh` bug — the `.gitconfig` entry itself was
+malformed (unclear whether `gh auth setup-git` wrote it that way originally or
+something else rewrote it later).
+
+Fixed by hand: `helper = !gh auth git-credential` (kept relative, not the
+absolute `gh` binary path `gh auth setup-git --hostname github.com` writes —
+both work, relative was the smaller diff off the broken line). Verified with
+`git push --dry-run` (auth succeeds, no prompt), then ran the real `mysh save`
+— pushed clean (`85f7237`), working tree clean, up to date with
+`origin/main`.
+
+Full acceptance test now passes end-to-end: fresh-machine bootstrap, apply,
+real secret decryption, and save/push all confirmed working.

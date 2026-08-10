@@ -63,6 +63,11 @@ investigation.
   GitHub token, Claude OAuth token added via `mysh add --secret` and pushed to
   `origin/main` (`7431eb3`) via plain git, not `mysh save` (which would've needed
   the passphrase again just to diff, with no drift to actually capture).
+- [Bootstrap end-to-end on a second machine](issues/10-bootstrap-second-machine.md)
+  — done; `apply` decrypted all three real secrets correctly. `mysh save` initially
+  failed on a `git push` auth prompt — root cause was a malformed (missing `!`)
+  `credential.helper` line in `~/.gitconfig`, not a mysh bug. Fixed by hand; `save`
+  then pushed clean (`85f7237`).
 
 ## Not yet specified
 
