@@ -35,7 +35,7 @@ if ! command -v zig >/dev/null 2>&1; then
     missing=1
 fi
 
-if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+if ! cargo zigbuild --help >/dev/null 2>&1; then
     echo "release.sh: cargo-zigbuild not found — install with: cargo install cargo-zigbuild" >&2
     missing=1
 fi
