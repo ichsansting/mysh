@@ -1,7 +1,5 @@
 {
   "model": "opusplan",
-  "theme": "dark",
-  "autoCompactEnabled": false,
   "enabledPlugins": {
     "ponytail@ponytail": true,
     "svelte@svelte": true,
@@ -20,5 +18,8 @@
         "repo": "sveltejs/ai-tools"
       }
     }
-  }
+  },
+  "theme": "dark",
+  "autoCompactEnabled": false,
+  "tui": "fullscreen"
 }
