@@ -219,3 +219,19 @@ fn rerunning_bootstrap_does_not_duplicate_the_path_line_or_log_entries() {
         "rerunning bootstrap must not duplicate either rc-file line's log entry: {log_text:?}"
     );
 }
+
+/// `bootstrap.sh` can't share `mise::DATA_DIR_REL` directly — it's a POSIX `/bin/sh`
+/// script that runs before the `mysh` binary it's about to download even exists — so it
+/// necessarily hardcodes its own copy of the same subpath. This is the guard against the
+/// two silently drifting apart: fails the moment either side changes without the other.
+#[test]
+fn bootstrap_data_dir_line_matches_mise_data_dir_rel() {
+    let script = fs::read_to_string(bootstrap_sh()).unwrap();
+    let expected = format!("mise_data_dir=\"$TARGET_DIR/{}\"", mysh::mise::DATA_DIR_REL);
+    assert!(
+        script.contains(&expected),
+        "bootstrap.sh's mise_data_dir assignment doesn't match mise::DATA_DIR_REL ({:?}); script had: {}",
+        mysh::mise::DATA_DIR_REL,
+        script.lines().find(|l| l.contains("mise_data_dir=")).unwrap_or("<not found>")
+    );
+}

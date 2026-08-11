@@ -65,11 +65,20 @@ pub fn ensure_installed(target: &Path, log: &AppLog) -> Result<PathBuf, String> 
     Ok(install_path)
 }
 
+/// Relative path of `data_dir`, `$HOME`-joined. A separate constant (not just inlined
+/// into `data_dir`) because `package::shim_script` needs the same subpath rendered as
+/// literal `$HOME`-relative shell text, not a `PathBuf` resolved against a concrete
+/// `target` — sharing this constant is what keeps the two from drifting apart. `pub`
+/// (matching `data_dir` itself) so `tests/bootstrap_integration.rs` can assert
+/// `bootstrap.sh`'s independent copy — necessarily hardcoded there, since it runs
+/// before the `mysh` binary exists to share this with — still matches.
+pub const DATA_DIR_REL: &str = ".mysh/mise";
+
 /// Where packages get installed: an isolated, mysh-owned prefix under `target`'s state
 /// dir (not `mise`'s system default), so Teardown can remove every installed package by
 /// deleting this one directory.
 pub fn data_dir(target: &Path) -> PathBuf {
-    target.join(".mysh/mise")
+    target.join(DATA_DIR_REL)
 }
 
 /// Where mise's own config lives once rendered by ordinary Apply from

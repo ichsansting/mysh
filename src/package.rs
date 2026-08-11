@@ -25,7 +25,8 @@ pub(crate) fn default_bin_name(specifier: &str) -> String {
 /// guarantees gets bootstrapped whenever any package — eager or lazy — is declared).
 pub(crate) fn shim_script(specifier: &str, invoke_name: &str) -> String {
     format!(
-        "#!/bin/sh\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x {specifier} -- {invoke_name} \"$@\"\n",
+        "#!/bin/sh\nexport MISE_DATA_DIR=\"$HOME/{}\"\nexec mise x {specifier} -- {invoke_name} \"$@\"\n",
+        mise::DATA_DIR_REL,
     )
 }
 
