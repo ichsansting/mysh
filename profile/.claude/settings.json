@@ -1,9 +1,10 @@
 {
-  "model": "opusplan",
+  "model": "sonnet[1m]",
   "enabledPlugins": {
     "ponytail@ponytail": true,
     "svelte@svelte": true,
-    "mattpocock-skills@claude-plugins-official": true
+    "mattpocock-skills@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {
@@ -22,4 +23,8 @@
   "theme": "dark",
   "autoCompactEnabled": false,
   "tui": "fullscreen"
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline-command.sh\""
+  }
 }
