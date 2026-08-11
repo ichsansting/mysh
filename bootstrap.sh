@@ -59,9 +59,18 @@ fi
 
 rc_file="${MYSH_RC_FILE:-}"
 if [ -z "$rc_file" ]; then
-    case "${SHELL:-}" in
-        */zsh) rc_file="$HOME/.zshrc" ;;
-        */bash) rc_file="$HOME/.bashrc" ;;
+    # $SHELL is only the account's login shell, not necessarily what's actually
+    # interactive right now (frequently unset/wrong under Docker) — prefer the
+    # real parent process of this `sh`, readable on Linux with no extra
+    # dependency via procfs. Falls back to $SHELL where /proc isn't available
+    # (e.g. macOS).
+    shell_name="${SHELL:-}"
+    if [ -r "/proc/$PPID/comm" ]; then
+        shell_name="$(cat "/proc/$PPID/comm" 2>/dev/null || echo "$shell_name")"
+    fi
+    case "$shell_name" in
+        */zsh|zsh) rc_file="$HOME/.zshrc" ;;
+        */bash|bash) rc_file="$HOME/.bashrc" ;;
         *) rc_file="$HOME/.profile" ;;
     esac
 fi
