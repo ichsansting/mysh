@@ -22,7 +22,7 @@
   },
   "theme": "dark",
   "autoCompactEnabled": false,
-  "tui": "fullscreen"
+  "tui": "fullscreen",
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
