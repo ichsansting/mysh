@@ -81,6 +81,7 @@ fi
 # every reshim, so mysh must never write into it directly; this is where eager
 # packages resolve, via mise's own native shim/activation mechanism, see ADR-0006).
 mise_shims_dir="$TARGET_DIR/.mysh/mise/shims"
+mise_data_dir="$TARGET_DIR/.mysh/mise"
 path_line="export PATH=\"$bin_dir:$mise_shims_dir:\$PATH\""
 if ! grep -qF "$path_line" "$rc_file" 2>/dev/null; then
     printf '\n# added by mysh bootstrap.sh\n%s\n' "$path_line" >> "$rc_file"
@@ -89,6 +90,23 @@ if ! grep -qF "$path_line" "$rc_file" 2>/dev/null; then
     fi
 fi
 export PATH="$bin_dir:$mise_shims_dir:$PATH"
+
+# MISE_DATA_DIR must be durable too, not just threaded through mysh's own subprocess
+# calls (`package::install_declared`, every lazy shim) — otherwise a bare `mise`
+# command typed by the user resolves to mise's own default data dir instead of this
+# isolated one, silently producing a second, out-of-sync install location (confirmed
+# live: a stray `~/.local/share/mise` diverging from `~/.mysh/mise`, each partially
+# populated depending on which one a given `mise` invocation happened to see).
+# Checked independently of path_line so a machine bootstrapped before this line
+# existed still picks it up on the next bootstrap run.
+data_dir_line="export MISE_DATA_DIR=\"$mise_data_dir\""
+if ! grep -qF "$data_dir_line" "$rc_file" 2>/dev/null; then
+    printf '\n# added by mysh bootstrap.sh\n%s\n' "$data_dir_line" >> "$rc_file"
+    if ! grep -qF "$(printf 'bootstrap-path-added\t%s\t%s' "$rc_file" "$data_dir_line")" "$log_path" 2>/dev/null; then
+        printf 'bootstrap-path-added\t%s\t%s\n' "$rc_file" "$data_dir_line" >> "$log_path"
+    fi
+fi
+export MISE_DATA_DIR="$mise_data_dir"
 
 # --- Clone Source: sparse checkout of just profile/, skipping the Rust tool source ---
 if [ ! -d "$SOURCE_DIR/.git" ]; then

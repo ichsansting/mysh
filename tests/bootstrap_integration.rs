@@ -134,9 +134,13 @@ fn bootstrap_installs_binary_adds_path_clones_source_and_hands_off() {
     );
     assert!(log_text.contains("bootstrap-path-added\t"), "log was: {log_text:?}");
 
-    // rc file actually got the PATH line.
+    // rc file actually got the PATH line and the MISE_DATA_DIR line.
     let rc_text = fs::read_to_string(&rc_file).unwrap();
     assert!(rc_text.contains(&target.join(".mysh/bin").display().to_string()), "rc file was: {rc_text:?}");
+    assert!(
+        rc_text.contains(&format!("export MISE_DATA_DIR=\"{}\"", target.join(".mysh/mise").display())),
+        "rc file was: {rc_text:?}"
+    );
 
     // Source cloned from the same repo, with the seeded content present.
     assert_eq!(
@@ -195,6 +199,11 @@ fn rerunning_bootstrap_does_not_duplicate_the_path_line_or_log_entries() {
         1,
         "rerunning bootstrap must not duplicate the PATH line: {rc_text:?}"
     );
+    assert_eq!(
+        rc_text.matches("export MISE_DATA_DIR=").count(),
+        1,
+        "rerunning bootstrap must not duplicate the MISE_DATA_DIR line: {rc_text:?}"
+    );
 
     let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
     assert_eq!(
@@ -202,9 +211,11 @@ fn rerunning_bootstrap_does_not_duplicate_the_path_line_or_log_entries() {
         1,
         "rerunning bootstrap must not duplicate the log entry: {log_text:?}"
     );
+    // One entry each for the PATH line and the MISE_DATA_DIR line — two independent
+    // idempotency guards (see bootstrap.sh), not duplicated by the rerun.
     assert_eq!(
         log_text.matches("bootstrap-path-added").count(),
-        1,
-        "rerunning bootstrap must not duplicate the log entry: {log_text:?}"
+        2,
+        "rerunning bootstrap must not duplicate either rc-file line's log entry: {log_text:?}"
     );
 }
