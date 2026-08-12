@@ -1,6 +1,6 @@
 #!/bin/bash
 # Line 1 (work):  [PONYTAIL] | repo@branch | S: n | U: n | A: n
-# Line 2 (cost):  effort: X | tokens (pct%) | 5h pct% @time | 7d pct% @datetime | extra $used/$limit
+# Line 2 (cost):  effort: X | tokens (pct%) | 5h pct% remaining | 7d pct% remaining | extra $used/$limit
 # Colors/fields follow https://github.com/daniel3303/ClaudeCodeStatusLine
 input=$(cat)
 
@@ -97,8 +97,10 @@ if [ -n "$five_pct" ]; then
   five_pct=$(printf '%.0f' "$five_pct")
   seg="${WHITE}5h${RESET} $(usage_color "$five_pct")${five_pct}%${RESET}"
   if [ -n "$five_reset" ] && [ "$five_reset" != "null" ]; then
-    t=$(date -d "@$five_reset" +"%H:%M" 2>/dev/null)
-    [ -n "$t" ] && seg="${seg} ${DIM}@${t}${RESET}"
+    diff=$(( ${five_reset%.*} - $(date +%s) ))
+    [ "$diff" -lt 0 ] && diff=0
+    t="$((diff/3600))h$(((diff%3600)/60))m"
+    seg="${seg} ${DIM}${t}${RESET}"
   fi
   cost+=("$seg")
 else
@@ -111,8 +113,10 @@ if [ -n "$seven_pct" ]; then
   seven_pct=$(printf '%.0f' "$seven_pct")
   seg="${WHITE}7d${RESET} $(usage_color "$seven_pct")${seven_pct}%${RESET}"
   if [ -n "$seven_reset" ] && [ "$seven_reset" != "null" ]; then
-    t=$(date -d "@$seven_reset" +"%a %b %-d, %H:%M" 2>/dev/null)
-    [ -n "$t" ] && seg="${seg} ${DIM}@${t}${RESET}"
+    diff=$(( ${seven_reset%.*} - $(date +%s) ))
+    [ "$diff" -lt 0 ] && diff=0
+    t="$((diff/86400))d$(((diff%86400)/3600))h"
+    seg="${seg} ${DIM}${t}${RESET}"
   fi
   cost+=("$seg")
 else
