@@ -1,7 +1,7 @@
 # typed word -> real command
 abbr -a ls 'eza --icons'
 abbr -a ll 'eza --icons -la'
-abbr -a lt 'eza --icons --tree'
+abbr -a lt 'eza --icons --tree --level=1'
 abbr -a cat bat
 abbr -a grep rg
 abbr -a find fd
