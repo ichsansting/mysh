@@ -12,7 +12,7 @@ pub struct FileDrift {
     /// `Target`-relative path (a `Secret`'s `.age` suffix is stripped).
     pub path: PathBuf,
     /// `Source`-relative path (a `Secret` keeps its `.age` suffix; a `Fragment`-composed
-    /// target points at its `<name>.d/` directory).
+    /// target points at its `<name>.frag/` directory).
     pub source_path: PathBuf,
     pub is_secret: bool,
     /// Whether `path` is composed from a `Fragment` directory rather than a single
@@ -35,7 +35,7 @@ pub struct FileDrift {
 /// `Source` and compares plaintext-to-plaintext against `Target` — never ciphertext to
 /// plaintext. `get_passphrase` is only called when a `Secret` is actually encountered.
 ///
-/// A `Fragment`-composed target (`<name>.d/` in `Source`) is reported once, under its
+/// A `Fragment`-composed target (`<name>.frag/` in `Source`) is reported once, under its
 /// merged name, comparing a fresh concatenated render against live `Target` content —
 /// individual fragment files never appear as their own drift entries.
 pub fn diff(

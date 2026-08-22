@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// Renders every file in `source` to its mirrored relative path under `target`: plain
 /// files via identity copy, `Secret`s (`.age`-suffixed) via decrypt, `Fragment`
-/// directories (`<name>.d/`) via concatenate-in-filename-order into a single `<name>`
+/// directories (`<name>.frag/`) via concatenate-in-filename-order into a single `<name>`
 /// file. Skips `.git` (Source is a git working tree). Idempotent: a file is only
 /// (re)written when its content differs from what's already at the target path.
 ///
@@ -119,7 +119,7 @@ pub(crate) fn is_internal_dir_name(name: Option<&str>) -> bool {
 }
 
 /// Recursively lists files under `dir`, skipping `.git`/`.mysh` and not descending into
-/// `Fragment` directories (`<name>.d/`, handled separately as a composed unit). For
+/// `Fragment` directories (`<name>.frag/`, handled separately as a composed unit). For
 /// walking `Target` (or a `.track`-marked subdirectory of it) — `.mysh` there is always
 /// mysh's own generated state, never something to discover as trackable content. Use
 /// `walk_source_files` for `Source`.

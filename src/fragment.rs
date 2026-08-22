@@ -5,14 +5,19 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The Source-side suffix that marks a directory as a Fragment-composed target.
-pub const SUFFIX: &str = "d";
+///
+/// Deliberately not `d`: that's an extremely common real-world directory-name suffix
+/// (fish's native `conf.d`, `sudoers.d`, `cron.d`, ...) for directories whose files stay
+/// separate on Target — the opposite of Fragment composition. Colliding with it would
+/// silently swallow those into a single concatenated file.
+pub const SUFFIX: &str = "frag";
 
-/// Whether `path`'s file name marks it as a Fragment directory (`<name>.d`).
+/// Whether `path`'s file name marks it as a Fragment directory (`<name>.frag`).
 pub fn is_fragment_dir(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == SUFFIX)
 }
 
-/// A Fragment directory's rendered Target path: `relative` with its `.d` suffix stripped.
+/// A Fragment directory's rendered Target path: `relative` with its `.frag` suffix stripped.
 pub fn target_name(relative: &Path) -> PathBuf {
     relative.with_extension("")
 }
@@ -89,20 +94,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_fragment_dir_matches_only_the_d_suffix() {
-        assert!(is_fragment_dir(Path::new("nvim/init.d")));
+    fn is_fragment_dir_matches_only_the_frag_suffix() {
+        assert!(is_fragment_dir(Path::new("nvim/init.frag")));
         assert!(!is_fragment_dir(Path::new("nvim/init")));
         assert!(!is_fragment_dir(Path::new("bashrc")));
+        assert!(!is_fragment_dir(Path::new("fish/conf.d")));
     }
 
     #[test]
-    fn target_name_strips_only_the_d_extension() {
-        assert_eq!(target_name(Path::new("nvim/init.d")), Path::new("nvim/init"));
+    fn target_name_strips_only_the_frag_extension() {
+        assert_eq!(target_name(Path::new("nvim/init.frag")), Path::new("nvim/init"));
     }
 
     #[test]
     fn is_fragment_member_detects_files_under_a_fragment_dir_at_any_depth() {
-        assert!(is_fragment_member(Path::new("nvim/init.d/10-base")));
+        assert!(is_fragment_member(Path::new("nvim/init.frag/10-base")));
         assert!(!is_fragment_member(Path::new("nvim/init")));
     }
 }

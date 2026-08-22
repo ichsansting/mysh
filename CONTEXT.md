@@ -19,7 +19,7 @@ The git remote holding the canonical shared history of Source. Public — see AD
 The render step that turns Source into Target: identity copy for plain files, decrypt for Secrets, concatenate-in-filename-order for Fragment directories.
 
 **Fragment**:
-One piece of a composed Target, stored as a file inside a `<target-name>.d/` directory in Source. Fragments render in lexical filename order into a single Target file. A composed Target is derived-only: hand-edits to it show up under Diff but cannot be captured back into Source via Save — only discarded via Reset.
+One piece of a composed Target, stored as a file inside a `<target-name>.frag/` directory in Source. Fragments render in lexical filename order into a single Target file. A composed Target is derived-only: hand-edits to it show up under Diff but cannot be captured back into Source via Save — only discarded via Reset. The suffix is `.frag`, not the more common `.d` (fish's native `conf.d`, `sudoers.d`, etc.), precisely so a native multi-file directory like that can be tracked as plain/Directory-mode content without mysh mistaking it for a Fragment to compose.
 _Avoid_: partial, snippet
 
 **Secret**:
