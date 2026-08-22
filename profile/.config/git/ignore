@@ -1,4 +1,6 @@
 .DS_Store
 .direnv/
 *.local
-.mise.local.toml
+mise.local.toml
+mise.*.local.toml
+.env

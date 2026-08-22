@@ -1,6 +1,7 @@
-# rebase local master onto upstream/master, then push to origin
+# rebase current branch onto the matching upstream branch, then push to origin
 function git_update
+    set branch (git branch --show-current)
     git fetch upstream
-    git rebase upstream/master
-    git push origin master
+    git rebase upstream/$branch
+    git push origin $branch
 end

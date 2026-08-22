@@ -1,12 +1,3 @@
-[[language]]
-name = "nix"
-language-servers = ["nixd"]
-auto-format = true
-formatter = { command = "nixfmt" }
-
-[language-server.nixd]
-command = "nixd"
-
 [language-server.rust-analyzer]
 command = "rust-analyzer"
 

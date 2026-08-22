@@ -1,4 +1,4 @@
-# checkout a PR into its own worktree, sparse-checked out to just the dir the last commit touched
+# checkout a PR into its own pr-<number> worktree, sparse-checked out to every dir the PR touches
 function pr
     if test -z "$argv[1]"
         echo "Usage: pr <pull-request-number>"
@@ -49,7 +49,7 @@ function pr
 
     echo "Original PR branch: $pr_branch"
 
-    set -l pr_dir "$repo_root/$pr_branch"
+    set -l pr_dir "$repo_root/pr-$pr_num"
 
     if not git remote | grep -q '^upstream$'
         echo "Error: 'upstream' remote not found."
@@ -72,17 +72,17 @@ function pr
 
     git sparse-checkout init --cone
 
-    set -l last_commit_dir (git diff-tree --no-commit-id --name-only -r HEAD | head -n 1 | xargs dirname)
+    set -l pr_dirs (gh pr view "$pr_num" --repo "$gh_repo" --json files -q '.files[].path' | xargs -n1 dirname | sort -u)
 
-    if test -z "$last_commit_dir"
-        echo "Error: Could not determine directory from last commit; sparse checkout aborted."
+    if test -z "$pr_dirs"
+        echo "Error: Could not determine directories from PR files; sparse checkout aborted."
         return 1
     end
 
-    echo "Sparse-checkout directory: $last_commit_dir"
-    git sparse-checkout set "$last_commit_dir"
+    echo "Sparse-checkout directories: $pr_dirs"
+    git sparse-checkout set $pr_dirs
 
     git checkout HEAD
 
-    echo "Switched to PR #$pr_num with sparse checkout of $last_commit_dir"
+    echo "Switched to PR #$pr_num with sparse checkout of $pr_dirs"
 end

@@ -2,8 +2,8 @@
 # for private git modules. Originally podman (used `podman secret` + `podman run --secret`); plain
 # `docker run` has no --secret flag (that's Swarm-only), so the key is bind-mounted read-only instead.
 function tf_amd64
-    set -l ssh_key_path "$HOME/.ssh/id_rsa"
-    set -l tf_version (tfenv version-name)
+    set -l ssh_key_path "$HOME/.ssh/id_ed25519"
+    set -l tf_version (tf-version-name)
     set -l image_name "hashicorp/terraform:$tf_version"
 
     if not test -f "$ssh_key_path"
@@ -14,9 +14,9 @@ function tf_amd64
 
     set -l commands "
         mkdir -p /root/.ssh && chmod 700 /root/.ssh && \
-        cp /run/secrets/ssh_key /root/.ssh/id_rsa && \
-        chmod 600 /root/.ssh/id_rsa && \
-        git config --global core.sshCommand 'ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no' && \
+        cp /run/secrets/ssh_key /root/.ssh/id_ed25519 && \
+        chmod 600 /root/.ssh/id_ed25519 && \
+        git config --global core.sshCommand 'ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no' && \
         git config --global --add safe.directory \"*\" && \
         git config --global url.\"git@github.com:\".insteadOf \"https://github.com/\" && \
         terraform \"\$@\"

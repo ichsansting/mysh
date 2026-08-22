@@ -3,8 +3,7 @@
   "enabledPlugins": {
     "ponytail@ponytail": true,
     "svelte@svelte": true,
-    "mattpocock-skills@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true
+    "mattpocock-skills@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {

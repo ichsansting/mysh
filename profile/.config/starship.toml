@@ -1,4 +1,4 @@
-format = "$username$hostname$directory$git_branch$git_status$nix_shell$rust$python$nodejs$cmd_duration$line_break$character"
+format = "$username$hostname$directory$git_branch$git_status$rust$python$nodejs$cmd_duration$line_break$character"
 palette = "catppuccin_mocha"
 
 [character]
@@ -27,11 +27,6 @@ modified = "!"
 staged = "+"
 style = "bold red"
 untracked = "?"
-
-[nix_shell]
-format = "[$symbol$state]($style) "
-style = "bold blue"
-symbol = " "
 
 [nodejs]
 detect_files = ["package.json", ".nvmrc", ".node-version"]
