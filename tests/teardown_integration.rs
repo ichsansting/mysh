@@ -65,6 +65,64 @@ fn teardown_deletes_created_files_and_restores_overwritten_originals() {
 }
 
 #[test]
+fn teardown_leaves_overlay_targets_in_place_with_accumulated_keys_intact() {
+    let source = temp_dir("teardown-source-overlay");
+    let target = temp_dir("teardown-target-overlay");
+
+    // An overlay onto a pre-existing file mysh doesn't otherwise own, plus a plain
+    // created file as a control that normal teardown behavior still applies.
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join(".claude.json"), br#"{"theme":"dark"}"#).unwrap();
+    fs::write(source.join(".claude.json.overlay"), br#"{"onboarded":true}"#).unwrap();
+    fs::write(source.join("newfile"), b"fresh content\n").unwrap();
+
+    run_apply(&source, &target);
+    // No whole-file backup for an overlay target: the backup could only feed the
+    // whole-file restore ADR-0008 rejects, and it would snapshot keys mysh never owned.
+    assert!(
+        !target.join(".mysh/backups/.claude.json").exists(),
+        "overlay apply must not back up the whole target file"
+    );
+
+    // Keys accumulated by other programs after apply — exactly what a whole-file
+    // restore (or delete) would destroy.
+    let accumulated = br#"{"theme":"dark","onboarded":true,"accumulated":"state"}"#;
+    fs::write(target.join(".claude.json"), accumulated).unwrap();
+
+    let output = run_teardown(&target, "y\n");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("leave .claude.json"),
+        "summary must say the overlay target is left alone: {stdout:?}"
+    );
+
+    // Overlay target untouched: accumulated keys survive, declared-key residue stays.
+    assert_eq!(fs::read(target.join(".claude.json")).unwrap(), accumulated.to_vec());
+    assert!(!target.join("newfile").exists(), "created file must still be deleted");
+    assert!(!target.join(".mysh").exists(), "no mysh residue must remain");
+}
+
+#[test]
+fn teardown_leaves_an_overlay_created_file_in_place_too() {
+    // Even when the overlay itself created the file (from `{}`): by teardown time
+    // other programs may have written keys mysh never owned into it, making it
+    // indistinguishable from the pre-existing case — deleting would destroy them.
+    let source = temp_dir("teardown-source-overlay-created");
+    let target = temp_dir("teardown-target-overlay-created");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(source.join(".claude.json.overlay"), br#"{"onboarded":true}"#).unwrap();
+
+    run_apply(&source, &target);
+    assert!(target.join(".claude.json").exists());
+
+    let output = run_teardown(&target, "y\n");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(target.join(".claude.json").exists(), "overlay-created file must not be deleted");
+    assert!(!target.join(".mysh").exists(), "no mysh residue must remain");
+}
+
+#[test]
 fn declined_teardown_leaves_target_and_log_unchanged() {
     let source = temp_dir("teardown-source-decline");
     let target = temp_dir("teardown-target-decline");

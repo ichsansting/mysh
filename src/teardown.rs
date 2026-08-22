@@ -79,6 +79,12 @@ fn describe(entry: &LogEntry) -> String {
     match entry {
         LogEntry::Created(relative) => format!("delete {}\n", relative.display()),
         LogEntry::Overwritten { relative, .. } => format!("restore {}\n", relative.display()),
+        // Left in place on purpose: mysh only ever owned the declared keys, and by now
+        // the file holds keys other programs wrote — neither deletable nor restorable
+        // from a backup without destroying them (see ADR-0008).
+        LogEntry::OverlayTouched(relative) => {
+            format!("leave {} (overlay; declared keys stay merged)\n", relative.display())
+        }
         LogEntry::MiseBootstrapped(path) => format!("remove mise ({})\n", path.display()),
         LogEntry::PackageInstalled(specifier) => format!("uninstall package {specifier}\n"),
         LogEntry::BootstrapInstalled(path) => format!("remove mysh binary ({})\n", path.display()),
@@ -184,6 +190,7 @@ mod tests {
                 relative: PathBuf::from("gitconfig"),
                 backup: PathBuf::from(".mysh/backups/gitconfig"),
             },
+            LogEntry::OverlayTouched(PathBuf::from(".claude.json")),
             LogEntry::MiseBootstrapped(PathBuf::from("/home/u/.mysh/bin/mise")),
             LogEntry::PackageInstalled("widget@1.0".to_string()),
             LogEntry::BootstrapInstalled(PathBuf::from("/home/u/.mysh/bin/mysh")),
@@ -196,6 +203,7 @@ mod tests {
         assert_eq!(summary.lines().count(), entries.len());
         assert!(summary.contains("delete bashrc\n"));
         assert!(summary.contains("restore gitconfig\n"));
+        assert!(summary.contains("leave .claude.json (overlay; declared keys stay merged)\n"));
         assert!(summary.contains("remove mise (/home/u/.mysh/bin/mise)\n"));
         assert!(summary.contains("uninstall package widget@1.0\n"));
         assert!(summary.contains("remove mysh binary (/home/u/.mysh/bin/mysh)\n"));

@@ -27,7 +27,7 @@ A file in Source whose name ends in `.age`. Its content is only ever decrypted d
 _Avoid_: credential
 
 **Overlay**:
-A file in Source whose name ends in `.overlay` (e.g. `.claude.json.overlay`, declaring keys for Target's `.claude.json`), holding only the specific keys mysh should enforce onto an existing Target file it doesn't otherwise own — unlike Fragment, which composes a Target's entire content from pieces it fully owns. Apply shallow-merges the declared keys onto Target's current content, creating the file from `{}` if it doesn't exist yet; every other key already in Target is left untouched and is never read into Source. Derived-only, like Fragment: Diff reports drift only when a declared key's value disagrees with Target, and that drift can't be captured back into Source via Save — only re-enforced via Apply/Reset. The type to parse/merge as is picked from the filename left after stripping `.overlay` (`.json` today; other types are rejected, not guessed at).
+A file in Source whose name ends in `.overlay` (e.g. `.claude.json.overlay`, declaring keys for Target's `.claude.json`), holding only the specific keys mysh should enforce onto an existing Target file it doesn't otherwise own — unlike Fragment, which composes a Target's entire content from pieces it fully owns. Apply shallow-merges the declared keys onto Target's current content, creating the file from `{}` if it doesn't exist yet; every other key already in Target is left untouched and is never read into Source. Derived-only, like Fragment: Diff reports drift only when a declared key's value disagrees with Target, and that drift can't be captured back into Source via Save — only re-enforced via Apply/Reset. The type to parse/merge as is picked from the filename left after stripping `.overlay` (`.json` today; other types are rejected, not guessed at). Teardown leaves an Overlay's Target in place — mysh never owned the file's other keys, so the declared keys stay merged as residue rather than risking them (see ADR-0008).
 _Avoid_: patch, sync
 
 **Passphrase**:
@@ -63,4 +63,4 @@ A Package declared as a real, portable shim file in Source (not a line in a decl
 The per-device record of everything mysh has done to that machine: every file it created vs. overwrote (with the original backed up), every Package installed, every PATH/rc-file line it added, and the bootstrap installer's own footprint. What makes Teardown possible.
 
 **Teardown**:
-The operation that reverses everything in the Application Log, returning the device to its state from before mysh's install script was ever run.
+The operation that reverses everything in the Application Log, returning the device to its state from before mysh's install script was ever run. One deliberate exception: an Overlay's Target is left in place, declared keys still merged (see ADR-0008).

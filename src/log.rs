@@ -26,6 +26,11 @@ enum Entry {
 pub enum LogEntry {
     Created(PathBuf),
     Overwritten { relative: PathBuf, backup: PathBuf },
+    /// An `Overlay` target mysh merged declared keys into. Deliberately *not*
+    /// `Created`/`Overwritten`: teardown leaves the file in place (see ADR-0008) —
+    /// mysh never owned its other keys, so neither deleting it nor restoring a
+    /// whole-file backup could be right.
+    OverlayTouched(PathBuf),
     MiseBootstrapped(PathBuf),
     PackageInstalled(String),
     BootstrapInstalled(PathBuf),
@@ -39,6 +44,7 @@ fn parse_entry(line: &str) -> Option<LogEntry> {
         ["overwritten", relative, backup] => {
             Some(LogEntry::Overwritten { relative: PathBuf::from(relative), backup: PathBuf::from(backup) })
         }
+        ["overlay-touched", relative] => Some(LogEntry::OverlayTouched(PathBuf::from(relative))),
         ["mise-bootstrapped", path] => Some(LogEntry::MiseBootstrapped(PathBuf::from(path))),
         ["package-installed", specifier] => Some(LogEntry::PackageInstalled(specifier.to_string())),
         ["bootstrap-installed", path] => Some(LogEntry::BootstrapInstalled(PathBuf::from(path))),
@@ -108,6 +114,13 @@ impl AppLog {
         ))
     }
 
+    /// Records that an `Overlay` merged declared keys into `relative` — makes the path
+    /// `is_managed` (so it's only recorded once), while telling `teardown` to leave
+    /// the file alone rather than delete/restore it (see ADR-0008).
+    pub fn record_overlay_touched(&self, relative: &Path) -> io::Result<()> {
+        self.append(&format!("overlay-touched\t{}\n", relative.to_string_lossy()))
+    }
+
     /// Records that this device didn't already have `mise`, and mysh installed it at
     /// `install_path` — what lets `teardown` later delete exactly that file.
     pub fn record_mise_bootstrapped(&self, install_path: &Path) -> io::Result<()> {
@@ -159,6 +172,10 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_entry("overlay-touched\t.claude.json"),
+            Some(LogEntry::OverlayTouched(PathBuf::from(".claude.json")))
+        );
+        assert_eq!(
             parse_entry("mise-bootstrapped\t/home/u/.mysh/bin/mise"),
             Some(LogEntry::MiseBootstrapped(PathBuf::from("/home/u/.mysh/bin/mise")))
         );
@@ -194,6 +211,7 @@ mod tests {
         let log = AppLog::open(&dir);
         log.record_created(Path::new("bashrc")).unwrap();
         log.record_overwritten(Path::new("gitconfig"), Path::new(".mysh/backups/gitconfig")).unwrap();
+        log.record_overlay_touched(Path::new(".claude.json")).unwrap();
         log.record_mise_bootstrapped(Path::new("/home/u/.mysh/bin/mise")).unwrap();
         log.record_package_installed("widget@1.0").unwrap();
 
@@ -205,9 +223,20 @@ mod tests {
                     relative: PathBuf::from("gitconfig"),
                     backup: PathBuf::from(".mysh/backups/gitconfig"),
                 },
+                LogEntry::OverlayTouched(PathBuf::from(".claude.json")),
                 LogEntry::MiseBootstrapped(PathBuf::from("/home/u/.mysh/bin/mise")),
                 LogEntry::PackageInstalled("widget@1.0".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn overlay_touched_makes_the_path_managed() {
+        let dir = std::env::temp_dir().join(format!("mysh-log-test-overlay-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let log = AppLog::open(&dir);
+        assert!(!log.is_managed(Path::new(".claude.json")).unwrap());
+        log.record_overlay_touched(Path::new(".claude.json")).unwrap();
+        assert!(log.is_managed(Path::new(".claude.json")).unwrap());
     }
 }

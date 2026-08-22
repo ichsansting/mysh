@@ -72,11 +72,17 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
             continue;
         }
 
-        apply_one(&log, target, &relative, |dest| {
-            let existing = fs::read(dest).unwrap_or_default();
-            let merged = overlay::merge(&relative, &existing, &declared)?;
-            write_if_changed(dest, &merged, false).map_err(|e| e.to_string())
-        })?;
+        // Deliberately not `apply_one`: an Overlay target gets no whole-file backup
+        // and no created/overwritten classification. mysh never owns the file's other
+        // keys, so a whole-file backup would snapshot content that isn't mysh's to
+        // restore — teardown leaves the file in place instead (see ADR-0008). The
+        // `overlay-touched` entry is recorded once (first touch), only after the
+        // merge write has succeeded, matching `apply_one`'s ordering guarantee.
+        let merged = overlay::merge(&relative, &existing, &declared)?;
+        write_if_changed(&dest, &merged, false).map_err(|e| e.to_string())?;
+        if !log.is_managed(&relative).map_err(|e| e.to_string())? {
+            log.record_overlay_touched(&relative).map_err(|e| e.to_string())?;
+        }
     }
 
     package::apply(source, target, &log)?;
