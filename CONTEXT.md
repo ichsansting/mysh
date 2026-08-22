@@ -26,6 +26,10 @@ _Avoid_: partial, snippet
 A file in Source whose name ends in `.age`. Its content is only ever decrypted during Apply/Diff, never stored in Source as plaintext. Diffing a Secret compares a freshly-decrypted copy of Source against the plaintext Target — never ciphertext against plaintext.
 _Avoid_: credential
 
+**Overlay**:
+A file in Source whose name ends in `.overlay` (e.g. `.claude.json.overlay`, declaring keys for Target's `.claude.json`), holding only the specific keys mysh should enforce onto an existing Target file it doesn't otherwise own — unlike Fragment, which composes a Target's entire content from pieces it fully owns. Apply shallow-merges the declared keys onto Target's current content, creating the file from `{}` if it doesn't exist yet; every other key already in Target is left untouched and is never read into Source. Derived-only, like Fragment: Diff reports drift only when a declared key's value disagrees with Target, and that drift can't be captured back into Source via Save — only re-enforced via Apply/Reset. The type to parse/merge as is picked from the filename left after stripping `.overlay` (`.json` today; other types are rejected, not guessed at).
+_Avoid_: patch, sync
+
 **Passphrase**:
 The single, shared secret used to derive the encryption key for every Secret, on every device. Prompted fresh on any command that needs to decrypt something; never cached or stored.
 

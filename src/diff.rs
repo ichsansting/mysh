@@ -1,6 +1,7 @@
 use crate::apply::{is_internal_dir_name, walk_files, walk_source_files};
 use crate::fragment;
 use crate::git;
+use crate::overlay;
 use crate::secret::{self, PassphraseFn};
 use std::collections::BTreeSet;
 use std::fs;
@@ -18,6 +19,9 @@ pub struct FileDrift {
     /// Whether `path` is composed from a `Fragment` directory rather than a single
     /// `Source` file — derived-only, so `save` refuses it.
     pub is_fragment: bool,
+    /// Whether `path` is declared by an `Overlay` file (`<name>.overlay`) rather than
+    /// a single `Source` file — derived-only, so `save` refuses it, same as `Fragment`.
+    pub is_overlay: bool,
     /// `Target` (live disk) differs from `Source`.
     pub target_drift: bool,
     /// `Source` differs from `Remote` (either side may have unpulled/unpushed commits).
@@ -38,6 +42,10 @@ pub struct FileDrift {
 /// A `Fragment`-composed target (`<name>.frag/` in `Source`) is reported once, under its
 /// merged name, comparing a fresh concatenated render against live `Target` content —
 /// individual fragment files never appear as their own drift entries.
+///
+/// An `Overlay` target (`<name>.overlay` in `Source`) reports `target_drift` only when
+/// one of its *declared keys* doesn't match Target's current value for that key — the
+/// rest of Target's file is never read for comparison, since Source never owns it.
 pub fn diff(
     source: &Path,
     target: &Path,
@@ -57,9 +65,11 @@ pub fn diff(
         .collect();
     paths.extend(git::list_tree(source, &upstream)?);
     paths.extend(tracked_new_paths(source, target, &paths).map_err(|e| e.to_string())?);
-    // Fragment files and their merged Target name are handled in the dedicated loop
-    // below, never as an ordinary per-path drift entry.
-    paths.retain(|p| !fragment::is_fragment_member(p) && !fragment_targets.contains(p));
+    // Fragment files, their merged Target name, and Overlay files are handled in
+    // dedicated loops below, never as an ordinary per-path drift entry.
+    paths.retain(|p| {
+        !fragment::is_fragment_member(p) && !fragment_targets.contains(p) && !overlay::is_overlay_file(p)
+    });
 
     let mut drifts = Vec::new();
     for source_path in paths {
@@ -88,6 +98,7 @@ pub fn diff(
                 source_path,
                 is_secret,
                 is_fragment: false,
+                is_overlay: false,
                 target_drift,
                 remote_drift,
             });
@@ -106,8 +117,36 @@ pub fn diff(
                 source_path: fragment_dir,
                 is_secret: false,
                 is_fragment: true,
+                is_overlay: false,
                 target_drift: true,
                 remote_drift: false,
+            });
+        }
+    }
+
+    // Overlay drift is key-level only: Target's file has content Source never owns
+    // (session state, unrelated keys, different formatting), so whole-file byte
+    // comparison would misfire constantly — only the declared keys' values matter.
+    for overlay_relative in overlay::find_overlay_files(source).map_err(|e| e.to_string())? {
+        let path = overlay::target_name(&overlay_relative);
+        let overlay_content = fs::read(source.join(&overlay_relative)).map_err(|e| e.to_string())?;
+        let declared = overlay::parse_declared(&overlay_relative, &path, &overlay_content)?;
+
+        let target_content = fs::read(target.join(&path)).unwrap_or_default();
+        let target_drift = !overlay::keys_match(&path, &target_content, &declared)?;
+
+        let remote_content = git::show(source, &upstream, &overlay_relative)?;
+        let remote_drift = Some(overlay_content) != remote_content;
+
+        if target_drift || remote_drift {
+            drifts.push(FileDrift {
+                path,
+                source_path: overlay_relative,
+                is_secret: false,
+                is_fragment: false,
+                is_overlay: true,
+                target_drift,
+                remote_drift,
             });
         }
     }

@@ -1,5 +1,6 @@
 use crate::fragment;
 use crate::log::AppLog;
+use crate::overlay;
 use crate::package;
 use crate::secret::{self, PassphraseFn};
 use std::fs;
@@ -9,8 +10,10 @@ use std::path::{Path, PathBuf};
 /// Renders every file in `source` to its mirrored relative path under `target`: plain
 /// files via identity copy, `Secret`s (`.age`-suffixed) via decrypt, `Fragment`
 /// directories (`<name>.frag/`) via concatenate-in-filename-order into a single `<name>`
-/// file. Skips `.git` (Source is a git working tree). Idempotent: a file is only
-/// (re)written when its content differs from what's already at the target path.
+/// file, `Overlay` files (`<name>.overlay`) via shallow key-merge onto whatever
+/// currently exists at `<name>` (creating it if missing). Skips `.git` (Source is a git
+/// working tree). Idempotent: a file is only (re)written when its content differs from
+/// what's already at the target path.
 ///
 /// The first time a given path is applied, pre-existing content at that path is backed
 /// up and the Application Log records it as overwritten; a path with no prior content
@@ -24,6 +27,9 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
     let log = AppLog::open(target);
     for entry in walk_source_files(source).map_err(|e| e.to_string())? {
         let source_relative = entry.strip_prefix(source).expect("entry is under source");
+        if overlay::is_overlay_file(source_relative) {
+            continue;
+        }
         let is_secret = secret::is_secret(source_relative);
         let relative: PathBuf = if is_secret {
             secret::strip_suffix(source_relative)
@@ -50,6 +56,26 @@ fn render(source: &Path, target: &Path, get_passphrase: &mut PassphraseFn) -> Re
         let content = fragment::render(&source.join(&fragment_dir), get_passphrase)?;
         apply_one(&log, target, &relative, |dest| {
             write_if_changed(dest, &content, false).map_err(|e| e.to_string())
+        })?;
+    }
+
+    for overlay_relative in overlay::find_overlay_files(source).map_err(|e| e.to_string())? {
+        let relative = overlay::target_name(&overlay_relative);
+        let declared_content = fs::read(source.join(&overlay_relative)).map_err(|e| e.to_string())?;
+        let declared = overlay::parse_declared(&overlay_relative, &relative, &declared_content)?;
+
+        let dest = target.join(&relative);
+        let existing = fs::read(&dest).unwrap_or_default();
+        // Skip entirely once the declared keys already hold — otherwise every apply
+        // would rewrite (and reformat) a file mysh only owns a few keys of, forever.
+        if overlay::keys_match(&relative, &existing, &declared)? {
+            continue;
+        }
+
+        apply_one(&log, target, &relative, |dest| {
+            let existing = fs::read(dest).unwrap_or_default();
+            let merged = overlay::merge(&relative, &existing, &declared)?;
+            write_if_changed(dest, &merged, false).map_err(|e| e.to_string())
         })?;
     }
 

@@ -12,7 +12,9 @@ use std::path::Path;
 /// unchanged. An edited `Secret` is re-encrypted (fresh salt/nonce) back into its
 /// `Source` `.age` file, never written there as plaintext. Refuses (with no prompt) if
 /// any drifted path is a `Fragment`-composed target — there's no unambiguous fragment
-/// to attribute a merged-file edit back to.
+/// to attribute a merged-file edit back to — or an `Overlay` target, which is
+/// Source-authoritative by design: a drifted declared key is fixed by `apply`/`reset`
+/// re-enforcing Source's value, never captured back into Source.
 pub fn save(
     source: &Path,
     target: &Path,
@@ -31,6 +33,13 @@ pub fn save(
             "'{}' is composed from fragments in {}; edit the fragment directly instead of saving",
             fragment.path.display(),
             fragment.source_path.display(),
+        ));
+    }
+    if let Some(overlay) = drifted.iter().find(|d| d.is_overlay) {
+        return Err(format!(
+            "'{}' is enforced by the overlay {}; Source's declared value wins, so save it there instead",
+            overlay.path.display(),
+            overlay.source_path.display(),
         ));
     }
 
