@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use support::{temp_dir, write_fake_mise};
+use support::temp_dir;
 
 const PASSPHRASE: &str = "correct horse battery staple";
 
@@ -275,43 +275,11 @@ fn package_add_lazy_honors_bin_override() {
 }
 
 #[test]
-fn package_add_eager_declares_via_mise_config_set_and_touches_only_source() {
+fn package_add_eager_writes_the_same_shim_with_the_eager_marker() {
     let source = temp_dir("add-pkg-eager-source");
     let target = temp_dir("add-pkg-eager-target");
-    let stub_dir = temp_dir("add-pkg-eager-stub");
-    write_fake_mise(&stub_dir);
-    let path_env = format!("{}:{}", stub_dir.display(), std::env::var("PATH").unwrap());
-
-    let output = run_add_with_path(&source, &target, &["github:elio-fm/elio@latest", "--eager"], &path_env);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-
-    assert_eq!(
-        fs::read_to_string(source.join(".config/mise/config.toml")).unwrap(),
-        "\n[tools]\n\"github:elio-fm/elio\" = \"latest\"\n"
-    );
-    // `add` never touches Target — no `.mysh` state, no rendered config, nothing.
-    assert!(!target.join(".mysh").exists());
-    assert!(!target.join(".config").exists());
-}
-
-#[test]
-fn package_add_bin_flag_combined_with_eager_errors() {
-    let source = temp_dir("add-pkg-eager-bin-source");
-    let target = temp_dir("add-pkg-eager-bin-target");
-    let stub_dir = temp_dir("add-pkg-eager-bin-stub");
-    write_fake_mise(&stub_dir);
-    let path_env = format!("{}:{}", stub_dir.display(), std::env::var("PATH").unwrap());
-
-    let output = run_add_with_path(&source, &target, &["go@latest", "--eager", "--bin", "go2"], &path_env);
-    assert!(!output.status.success());
-    assert!(!source.join(".config/mise/config.toml").exists());
-}
-
-#[test]
-fn package_add_eager_without_a_resolvable_mise_errors_clearly() {
-    let source = temp_dir("add-pkg-no-mise-source");
-    let target = temp_dir("add-pkg-no-mise-target");
-    // No fake `mise` on `PATH` at all, and none previously bootstrapped in `target`.
+    // No `mise` needed anywhere: eagerness is just a marker line in the shim file
+    // `apply` reads later (see ADR-0007) — `add --eager` writes a file and nothing else.
     let path_env = std::env::var("PATH")
         .unwrap()
         .split(':')
@@ -319,10 +287,33 @@ fn package_add_eager_without_a_resolvable_mise_errors_clearly() {
         .collect::<Vec<_>>()
         .join(":");
 
-    let output = run_add_with_path(&source, &target, &["go@latest", "--eager"], &path_env);
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("apply"));
+    let output = run_add_with_path(&source, &target, &["github:elio-fm/elio@latest", "--eager"], &path_env);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    assert_eq!(
+        fs::read_to_string(source.join(".mysh/bin/elio")).unwrap(),
+        "#!/bin/sh\n# mysh: eager\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x github:elio-fm/elio@latest -- elio \"$@\"\n"
+    );
+    // Eager no longer writes into config.toml's [tools] table (see ADR-0007).
     assert!(!source.join(".config/mise/config.toml").exists());
+    // `add` never touches Target — no `.mysh` state, no rendered config, nothing.
+    assert!(!target.join(".mysh").exists());
+    assert!(!target.join(".config").exists());
+}
+
+#[test]
+fn package_add_eager_honors_bin_override() {
+    let source = temp_dir("add-pkg-eager-bin-source");
+    let target = temp_dir("add-pkg-eager-bin-target");
+
+    let output = run_add(&source, &target, &["go@latest", "--eager", "--bin", "go2"], None);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    assert!(!source.join(".mysh/bin/go").exists());
+    assert_eq!(
+        fs::read_to_string(source.join(".mysh/bin/go2")).unwrap(),
+        "#!/bin/sh\n# mysh: eager\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x go@latest -- go2 \"$@\"\n"
+    );
 }
 
 #[test]

@@ -106,14 +106,17 @@ fn teardown_uninstalls_packages_removes_bootstrapped_mise_and_lazy_shims() {
     let target = temp_dir("teardown-target-packages");
     let stub_dir = temp_dir("teardown-stub-packages");
 
-    // One eager (installed immediately, uninstalled via the data-dir wipe) and one lazy
-    // package (never installed, but its shim — the only file it leaves behind — must
-    // still disappear on teardown, even though no Application Log entry tracks it
-    // individually; see mise::data_dir/`.mysh` doc comments for why that's sufficient).
-    // Real files now (see ADR-0006), written directly rather than through `add`.
-    fs::create_dir_all(source.join(".config/mise")).unwrap();
-    fs::write(source.join(".config/mise/config.toml"), "[tools]\nwidget = \"1.0\"\n").unwrap();
+    // One eager (installed immediately into the isolated data dir, uninstalled via the
+    // data-dir wipe) and one lazy package (never installed, but its shim — the only
+    // file it leaves behind — must still disappear on teardown, even though no
+    // Application Log entry tracks it individually; see mise::data_dir/`.mysh` doc
+    // comments for why that's sufficient). Real shim files both (see ADR-0007),
+    // written directly rather than through `add`.
     fs::create_dir_all(source.join(".mysh/bin")).unwrap();
+    write_executable(
+        &source.join(".mysh/bin/widget"),
+        "#!/bin/sh\n# mysh: eager\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x widget@1.0 -- widget \"$@\"\n",
+    );
     write_executable(
         &source.join(".mysh/bin/gadget"),
         "#!/bin/sh\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x gadget@2.0 -- gadget \"$@\"\n",
@@ -134,10 +137,12 @@ fn teardown_uninstalls_packages_removes_bootstrapped_mise_and_lazy_shims() {
 
     let owned_mise = target.join(".mysh/bin/mise");
     let lazy_shim = target.join(".mysh/bin/gadget");
-    let eager_shim = target.join(".mysh/mise/shims/widget");
+    let eager_shim = target.join(".mysh/bin/widget");
+    let eager_install = target.join(".mysh/mise/installs/widget");
     assert!(owned_mise.exists(), "setup must have bootstrapped an owned mise");
-    assert!(lazy_shim.exists(), "setup must have generated the lazy package's shim");
-    assert!(eager_shim.exists(), "setup must have installed the eager package via mise's own shim mechanism");
+    assert!(lazy_shim.exists(), "setup must have rendered the lazy package's shim");
+    assert!(eager_shim.exists(), "setup must have rendered the eager package's shim");
+    assert!(eager_install.exists(), "setup must have installed the eager package into the isolated data dir");
     let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap();
     assert!(log_text.contains("package-installed\twidget@1.0\n"), "log was: {log_text:?}");
 
@@ -146,7 +151,7 @@ fn teardown_uninstalls_packages_removes_bootstrapped_mise_and_lazy_shims() {
 
     assert!(!owned_mise.exists(), "mysh-bootstrapped mise must be removed");
     assert!(!lazy_shim.exists(), "the lazy package's shim must be removed even though it's untracked by the log");
-    assert!(!eager_shim.exists(), "the eager package's mise-owned shim must be removed too");
+    assert!(!eager_shim.exists(), "the eager package's shim must be removed too");
     assert!(!target.join(".mysh/mise").exists(), "the isolated package data dir must be removed");
     assert!(!target.join(".mysh").exists(), "no mysh residue must remain");
 }

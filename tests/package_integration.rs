@@ -45,13 +45,16 @@ fn write_lazy_shim(source: &Path, specifier: &str, bin_name: &str) {
     write_executable(&dir.join(bin_name), &content);
 }
 
-/// Writes a `[tools]`-only `config.toml` into `source` — standing in for what `add
-/// --eager` would write via `mise config set` (see ADR-0006), without going through the
-/// CLI or a real `mise` binary.
-fn write_eager_declaration(source: &Path, name: &str, version: &str) {
-    let dir = source.join(".config/mise");
+/// Like `write_lazy_shim`, but with the eager marker line — standing in for what `add
+/// --eager` would write (see ADR-0007): the same portable shim, plus `# mysh: eager`
+/// telling `apply` to prewarm the tool in its batch `mise install`.
+fn write_eager_shim(source: &Path, specifier: &str, bin_name: &str) {
+    let dir = source.join(".mysh/bin");
     fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("config.toml"), format!("[tools]\n{name} = \"{version}\"\n")).unwrap();
+    let content = format!(
+        "#!/bin/sh\n# mysh: eager\nexport MISE_DATA_DIR=\"$HOME/.mysh/mise\"\nexec mise x {specifier} -- {bin_name} \"$@\"\n"
+    );
+    write_executable(&dir.join(bin_name), &content);
 }
 
 #[test]
@@ -60,7 +63,7 @@ fn apply_bootstraps_missing_mise_and_logs_it() {
     let target = temp_dir("package-target-bootstrap");
     let stub_dir = temp_dir("package-stub-bootstrap");
 
-    write_eager_declaration(&source, "widget", "1.0");
+    write_eager_shim(&source, "widget@1.0", "widget");
     write_fake_curl(&stub_dir);
 
     let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
@@ -89,7 +92,7 @@ fn second_apply_reuses_bootstrapped_mise_without_reinvoking_installer() {
     let target = temp_dir("package-target-idempotent");
     let stub_dir = temp_dir("package-stub-idempotent");
 
-    write_eager_declaration(&source, "widget", "1.0");
+    write_eager_shim(&source, "widget@1.0", "widget");
     write_fake_curl(&stub_dir);
 
     let first = run_apply(&source, &target, &stub_path_env(&stub_dir));
@@ -117,9 +120,9 @@ fn apply_does_not_touch_mise_when_no_packages_are_declared() {
     let source = temp_dir("package-source-none");
     let target = temp_dir("package-target-none");
     let stub_dir = temp_dir("package-stub-none");
-    // No lazy shim files, no `[tools]` declaration, and no `curl`/`mise` stub: if apply
-    // tried to touch mise, the real (absent from this PATH) binary would fail to spawn
-    // and the command would error out.
+    // No shim files (eager or lazy) and no `curl`/`mise` stub: if apply tried to touch
+    // mise, the real (absent from this PATH) binary would fail to spawn and the
+    // command would error out.
 
     let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -186,12 +189,17 @@ fn lazy_shim_is_identity_copied_verbatim_and_stays_executable() {
 }
 
 #[test]
-fn eager_package_is_installed_via_blanket_mise_install_and_exposed_via_mises_own_shim() {
+fn eager_packages_are_batch_installed_in_one_mise_install_during_apply() {
     let source = temp_dir("package-source-eager");
     let target = temp_dir("package-target-eager");
     let stub_dir = temp_dir("package-stub-eager");
 
-    write_eager_declaration(&source, "widget", "1.0");
+    // Two eager packages and one lazy: apply must install exactly the eager pair, in
+    // a single `mise install` invocation (one process, mise parallelizes internally —
+    // the whole point of eager over lazy), never one process per package.
+    write_eager_shim(&source, "widget@1.0", "widget");
+    write_eager_shim(&source, "gadget@2.0", "gadget");
+    write_lazy_shim(&source, "elio@1.0", "elio");
     write_fake_mise(&stub_dir);
     let path_env = stub_path_env(&stub_dir);
 
@@ -199,43 +207,31 @@ fn eager_package_is_installed_via_blanket_mise_install_and_exposed_via_mises_own
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 
     let mise_calls = fs::read_to_string(stub_dir.join("mise.calls")).unwrap();
-    assert!(mise_calls.contains("install\n"), "must call blanket `mise install`, calls were: {mise_calls:?}");
-    assert!(mise_calls.contains("installed widget@1.0"), "calls were: {mise_calls:?}");
+    let install_calls: Vec<&str> =
+        mise_calls.lines().filter(|line| line.starts_with("install ")).collect();
+    assert_eq!(
+        install_calls,
+        vec!["install gadget@2.0 widget@1.0"],
+        "eager specifiers must go to mise as one batched install, calls were: {mise_calls:?}"
+    );
+    assert!(
+        !mise_calls.contains("elio"),
+        "lazy package must not be installed during apply: {mise_calls:?}"
+    );
 
     let log_text = fs::read_to_string(target.join(".mysh/log")).unwrap_or_default();
     // Already-present `mise` must never be re-bootstrapped.
     assert!(!log_text.contains("mise-bootstrapped"));
-    // The Application Log must record the install so `teardown` can later reverse it.
+    // The Application Log must record each install so `teardown`'s summary can name it.
     assert!(log_text.contains("package-installed\twidget@1.0\n"), "log was: {log_text:?}");
+    assert!(log_text.contains("package-installed\tgadget@2.0\n"), "log was: {log_text:?}");
 
-    // Eager packages get no mysh-generated shim — they resolve through mise's own
-    // native shim mechanism instead, in mise's own data dir (`.mysh/mise/shims`, the
-    // directory `bootstrap.sh` now also adds to `PATH` alongside `.mysh/bin`).
-    assert!(!target.join(".mysh/bin/widget").exists(), "eager must not get a mysh-generated shim");
-    let native_shim = target.join(".mysh/mise/shims/widget");
-    assert!(native_shim.exists(), "eager package must be reachable via mise's own shim dir");
-    let run = Command::new(&native_shim).output().unwrap();
-    assert!(run.status.success());
-    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "ran-widget");
-}
-
-#[test]
-fn lazy_and_eager_packages_land_in_their_own_distinct_directories() {
-    let source = temp_dir("package-source-mixed");
-    let target = temp_dir("package-target-mixed");
-    let stub_dir = temp_dir("package-stub-mixed");
-
-    write_eager_declaration(&source, "widget", "1.0");
-    write_lazy_shim(&source, "elio@1.0", "elio");
-    write_fake_mise(&stub_dir);
-
-    let output = run_apply(&source, &target, &stub_path_env(&stub_dir));
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-
-    assert!(target.join(".mysh/bin/elio").exists(), "lazy package must land in .mysh/bin");
-    assert!(!target.join(".mysh/mise/shims/elio").exists());
-    assert!(target.join(".mysh/mise/shims/widget").exists(), "eager package must land in mise's shims dir");
-    assert!(!target.join(".mysh/bin/widget").exists());
+    // Eager and lazy shims are the same kind of file in the same directory now (see
+    // ADR-0007) — nothing may land in mise's own shims dir, which is no longer on PATH.
+    for bin in ["widget", "gadget", "elio"] {
+        assert!(target.join(".mysh/bin").join(bin).exists(), "'{bin}' shim must be rendered into .mysh/bin");
+    }
+    assert!(!target.join(".mysh/mise/shims").exists(), "mise's native shims dir must stay out of the picture");
 }
 
 #[test]

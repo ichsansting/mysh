@@ -75,24 +75,23 @@ if [ -z "$rc_file" ]; then
     esac
 fi
 
-# Two mysh-owned directories go on PATH: `.mysh/bin` (mysh owns every file in it — the
-# mysh/mise binaries plus lazy-package shims, real files identity-copied from Source)
-# and `.mysh/mise/shims` (mise owns this one entirely — it's regenerated wholesale on
-# every reshim, so mysh must never write into it directly; this is where eager
-# packages resolve, via mise's own native shim/activation mechanism, see ADR-0006).
-mise_shims_dir="$TARGET_DIR/.mysh/mise/shims"
+# One mysh-owned directory goes on PATH: `.mysh/bin` — the mysh/mise binaries plus
+# every package shim (eager and lazy alike), real files identity-copied from Source.
+# Deliberately NOT mise's own shims dir (`.mysh/mise/shims`): putting that at the
+# front of PATH lets mise intercept commands it knows but has no version configured
+# for, shadowing and breaking pre-existing host tools (see ADR-0007).
 mise_data_dir="$TARGET_DIR/.mysh/mise"
-path_line="export PATH=\"$bin_dir:$mise_shims_dir:\$PATH\""
+path_line="export PATH=\"$bin_dir:\$PATH\""
 if ! grep -qF "$path_line" "$rc_file" 2>/dev/null; then
     printf '\n# added by mysh bootstrap.sh\n%s\n' "$path_line" >> "$rc_file"
     if ! grep -qF "$(printf 'bootstrap-path-added\t%s\t%s' "$rc_file" "$path_line")" "$log_path" 2>/dev/null; then
         printf 'bootstrap-path-added\t%s\t%s\n' "$rc_file" "$path_line" >> "$log_path"
     fi
 fi
-export PATH="$bin_dir:$mise_shims_dir:$PATH"
+export PATH="$bin_dir:$PATH"
 
 # MISE_DATA_DIR must be durable too, not just threaded through mysh's own subprocess
-# calls (`package::install_declared`, every lazy shim) — otherwise a bare `mise`
+# calls (`mise::install`, every package shim) — otherwise a bare `mise`
 # command typed by the user resolves to mise's own default data dir instead of this
 # isolated one, silently producing a second, out-of-sync install location (confirmed
 # live: a stray `~/.local/share/mise` diverging from `~/.mysh/mise`, each partially

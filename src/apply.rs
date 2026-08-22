@@ -138,8 +138,8 @@ fn back_up(
 /// bootstrap binaries, the Application Log, `mise`'s isolated data dir) — never user
 /// content when walking `Target`, so never walked there by `walk_files` or `diff`'s
 /// directory-mode tracking. Does *not* apply to `Source`'s own `.mysh/bin/` (real,
-/// git-tracked lazy-package shims — see ADR-0006), which is why `walk_source_files`
-/// exists as a separate entry point that skips only `.git`.
+/// git-tracked package shims, eager and lazy alike — see ADR-0006/0007), which is why
+/// `walk_source_files` exists as a separate entry point that skips only `.git`.
 pub(crate) fn is_internal_dir_name(name: Option<&str>) -> bool {
     matches!(name, Some(".git") | Some(".mysh"))
 }
@@ -154,8 +154,8 @@ pub(crate) fn walk_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
 }
 
 /// Like `walk_files`, but for walking `Source`: never skips `.mysh`, since
-/// `Source`'s `.mysh/bin/` holds real, git-tracked lazy-package shims that must be
-/// rendered/diffed like any other tracked file (see ADR-0006). Still skips `.git`
+/// `Source`'s `.mysh/bin/` holds real, git-tracked package shims that must be
+/// rendered/diffed like any other tracked file (see ADR-0006/0007). Still skips `.git`
 /// (Source's own VCS directory) and doesn't descend into `Fragment` directories.
 pub(crate) fn walk_source_files(dir: &Path) -> io::Result<Vec<std::path::PathBuf>> {
     walk(dir, false)
@@ -181,8 +181,8 @@ fn walk(dir: &Path, skip_mysh: bool) -> io::Result<Vec<std::path::PathBuf>> {
 }
 
 /// Identity-copies `src` to `dest`, preserving `src`'s executable bit — needed since
-/// ADR-0006: a lazy package's shim is now an ordinary tracked file in Source, ferried
-/// to Target through this exact path, and it must stay executable to be runnable.
+/// ADR-0006: a package's shim is an ordinary tracked file in Source, ferried to
+/// Target through this exact path, and it must stay executable to be runnable.
 fn copy_if_changed(src: &Path, dest: &Path) -> io::Result<()> {
     write_if_changed(dest, &fs::read(src)?, is_executable(src)?)
 }
