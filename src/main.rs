@@ -30,7 +30,11 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
             expect_no_args(&leftover)?;
             mysh::ops::apply::run(&config)
         }
-        "diff" | "save" | "reset" | "add" | "teardown" => {
+        "teardown" => {
+            expect_no_args(&leftover)?;
+            mysh::ops::teardown::run(&config, &mut std::io::stdin().lock())
+        }
+        "diff" | "save" | "reset" | "add" => {
             Err(Error::Rejected(format!("{command}: not implemented yet")))
         }
         _ => Err(Error::Usage(USAGE.to_string())),
