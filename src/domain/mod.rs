@@ -1,5 +1,6 @@
 pub mod drift;
 pub mod fragment;
+pub mod glob;
 pub mod log;
 pub mod overlay;
 pub mod package;

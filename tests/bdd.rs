@@ -118,12 +118,13 @@ impl World {
             .stderr(Stdio::piped())
             .spawn()
             .expect("failed to spawn mysh");
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(answer.unwrap_or("").as_bytes())
-            .expect("failed to write mysh stdin");
+        // A command that never reads stdin (most of them) may exit before the
+        // answer is written — that BrokenPipe is expected, not a failure.
+        match child.stdin.take().unwrap().write_all(answer.unwrap_or("").as_bytes()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+            Err(e) => panic!("failed to write mysh stdin: {e}"),
+        }
         self.last = Some(child.wait_with_output().expect("failed to wait for mysh"));
     }
 

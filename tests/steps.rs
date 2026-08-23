@@ -257,7 +257,11 @@ fn run_every_command_zero_flag(w: &mut World) {
             .spawn()
             .expect("failed to spawn installed mysh");
         use std::io::Write as _;
-        child.stdin.take().unwrap().write_all(answer.as_bytes()).unwrap();
+        match child.stdin.take().unwrap().write_all(answer.as_bytes()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+            Err(e) => panic!("failed to write stdin: {e}"),
+        }
         let output = child.wait_with_output().unwrap();
         w.batch.push((name.to_string(), output));
     }
