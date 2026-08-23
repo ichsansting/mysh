@@ -2,7 +2,8 @@ use crate::config::Config;
 use crate::domain::drift::{self, DriftSide};
 use crate::domain::render::{self, RenderKind};
 use crate::error::{Error, IoCtx, Result};
-use crate::infra::{git, prompt};
+use crate::infra::prompt::PassphraseFn;
+use crate::infra::{crypto, git, prompt};
 use crate::ops::diff;
 use std::fs;
 use std::io::BufRead;
@@ -10,8 +11,8 @@ use std::io::BufRead;
 /// Save: capture live Target edits back into Source, commit, push. Local wins.
 /// Refused for derived Targets (Fragment/Overlay) — there is no unambiguous
 /// Source piece to attribute the edit to.
-pub fn run(config: &Config, input: &mut dyn BufRead) -> Result<String> {
-    let drifts = diff::collect(config)?;
+pub fn run(config: &Config, input: &mut dyn BufRead, passphrase: &mut PassphraseFn) -> Result<String> {
+    let drifts = diff::collect(config, passphrase)?;
     let target_drifts: Vec<_> =
         drifts.into_iter().filter(|d| d.side == DriftSide::Target).collect();
     if target_drifts.is_empty() {
@@ -50,10 +51,10 @@ pub fn run(config: &Config, input: &mut dyn BufRead) -> Result<String> {
             RenderKind::Plain => {
                 fs::write(&dest, content).at("write", &dest)?;
             }
+            // Captured edits go back encrypted — plaintext never lands in Source.
             RenderKind::Secret => {
-                return Err(Error::Rejected(
-                    "save: Secret capture not implemented yet".to_string(),
-                ));
+                let envelope = crypto::encrypt(&content, &passphrase()?, &dest)?;
+                fs::write(&dest, envelope).at("write", &dest)?;
             }
             RenderKind::Fragment | RenderKind::Overlay => unreachable!("rejected above"),
         }

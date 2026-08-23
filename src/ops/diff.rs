@@ -2,18 +2,19 @@ use crate::config::Config;
 use crate::domain::drift::{self, Drift, DriftSide};
 use crate::domain::render::{self, RenderKind};
 use crate::error::{Error, IoCtx, Result};
-use crate::infra::git;
+use crate::infra::prompt::PassphraseFn;
+use crate::infra::{crypto, git};
 use std::fs;
 use std::path::Path;
 
 /// Diff: report drift across the three-state model — live Target vs a fresh
 /// in-memory render of Source, and Source vs Remote — without touching anything.
-pub fn run(config: &Config) -> Result<String> {
-    Ok(drift::format(&collect(config)?))
+pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
+    Ok(drift::format(&collect(config, passphrase)?))
 }
 
 /// The shared drift collection save/reset confirm against.
-pub fn collect(config: &Config) -> Result<Vec<Drift>> {
+pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Drift>> {
     let plan = render::enumerate(&config.source_dir)?;
     let mut drifts = Vec::new();
 
@@ -21,11 +22,17 @@ pub fn collect(config: &Config) -> Result<Vec<Drift>> {
         let source = config.source_dir.join(&unit.source_rel);
         let expected = match unit.kind {
             RenderKind::Plain => fs::read(&source).at("read", &source)?,
-            RenderKind::Secret | RenderKind::Fragment | RenderKind::Overlay => {
-                return Err(Error::Rejected(format!(
-                    "diff: {:?} rendering not implemented yet",
-                    unit.kind
-                )));
+            // Always plaintext-to-plaintext: a fresh decrypt of Source against
+            // the live Target, never ciphertext against plaintext.
+            RenderKind::Secret => {
+                let envelope = fs::read(&source).at("read", &source)?;
+                crypto::decrypt(&envelope, &passphrase()?, &source)?
+            }
+            RenderKind::Fragment => crate::domain::fragment::compose(&source, passphrase)?,
+            RenderKind::Overlay => {
+                return Err(Error::Rejected(
+                    "diff: Overlay rendering not implemented yet".to_string(),
+                ));
             }
         };
         if live_content(&config.target_dir.join(&unit.target_rel))?.as_deref() != Some(&expected[..])

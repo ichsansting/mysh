@@ -25,10 +25,11 @@ fn main() -> ExitCode {
 
 fn dispatch(command: &str, rest: &[String]) -> Result<String> {
     let (config, leftover) = Config::parse(rest)?;
+    let mut passphrase = mysh::infra::prompt::passphrase_provider(config.passphrase.clone());
     match command {
         "apply" => {
             expect_no_args(&leftover)?;
-            mysh::ops::apply::run(&config)
+            mysh::ops::apply::run(&config, &mut passphrase)
         }
         "teardown" => {
             expect_no_args(&leftover)?;
@@ -36,15 +37,15 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
         }
         "diff" => {
             expect_no_args(&leftover)?;
-            mysh::ops::diff::run(&config)
+            mysh::ops::diff::run(&config, &mut passphrase)
         }
         "save" => {
             expect_no_args(&leftover)?;
-            mysh::ops::save::run(&config, &mut std::io::stdin().lock())
+            mysh::ops::save::run(&config, &mut std::io::stdin().lock(), &mut passphrase)
         }
         "reset" => {
             expect_no_args(&leftover)?;
-            mysh::ops::reset::run(&config, &mut std::io::stdin().lock())
+            mysh::ops::reset::run(&config, &mut std::io::stdin().lock(), &mut passphrase)
         }
         "add" => Err(Error::Rejected(format!("{command}: not implemented yet"))),
         _ => Err(Error::Usage(USAGE.to_string())),
