@@ -1,4 +1,6 @@
+pub mod log;
 pub mod package;
+pub mod render;
 
 /// mysh's per-device footprint, all under one target-relative directory.
 pub const MYSH_DIR_REL: &str = ".mysh";

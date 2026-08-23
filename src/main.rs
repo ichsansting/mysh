@@ -24,11 +24,22 @@ fn main() -> ExitCode {
 }
 
 fn dispatch(command: &str, rest: &[String]) -> Result<String> {
-    let (_config, _leftover) = Config::parse(rest)?;
+    let (config, leftover) = Config::parse(rest)?;
     match command {
-        "apply" | "diff" | "save" | "reset" | "add" | "teardown" => {
+        "apply" => {
+            expect_no_args(&leftover)?;
+            mysh::ops::apply::run(&config)
+        }
+        "diff" | "save" | "reset" | "add" | "teardown" => {
             Err(Error::Rejected(format!("{command}: not implemented yet")))
         }
         _ => Err(Error::Usage(USAGE.to_string())),
+    }
+}
+
+fn expect_no_args(leftover: &[String]) -> Result<()> {
+    match leftover.first() {
+        None => Ok(()),
+        Some(arg) => Err(Error::Usage(format!("unexpected argument: {arg}"))),
     }
 }
