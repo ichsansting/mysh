@@ -2,7 +2,7 @@
 //! world setup (source/target/remote fixtures), running commands, and assertions
 //! on files, output, the Application Log, and the stub call records.
 
-use crate::{World, write_executable, write_file, TEST_PASSPHRASE};
+use crate::{TEST_PASSPHRASE, World, write_executable, write_file};
 use cucumber::{given, then, when};
 use mysh::domain::package;
 use mysh::infra::crypto;
@@ -22,7 +22,10 @@ fn bare_remote(w: &mut World) {
 #[given(expr = "a bare remote whose profile contains file {string} with content {string}")]
 fn bare_remote_with_profile(w: &mut World, rel: String, content: String) {
     w.init_bare_remote();
-    write_file(&w.source.join("profile").join(&rel), unescape(&content).as_bytes());
+    write_file(
+        &w.source.join("profile").join(&rel),
+        unescape(&content).as_bytes(),
+    );
     w.commit_source();
     w.push_source();
 }
@@ -69,7 +72,10 @@ fn tracked_dir_empty_marker(w: &mut World, dir: String, _marker: String) {
 
 #[given(expr = "source directory {string} tracked with a {string} marker containing {string}")]
 fn tracked_dir_marker_with_patterns(w: &mut World, dir: String, _marker: String, patterns: String) {
-    write_file(&w.source_path(&dir).join(".track"), format!("{patterns}\n").as_bytes());
+    write_file(
+        &w.source_path(&dir).join(".track"),
+        format!("{patterns}\n").as_bytes(),
+    );
 }
 
 #[given(expr = "source secret {string} encrypting {string}")]
@@ -103,14 +109,28 @@ fn source_overlay(w: &mut World, rel: String, declared: String) {
 
 #[given(expr = "source eager shim {string} for specifier {string}")]
 fn source_eager_shim(w: &mut World, rel: String, specifier: String) {
-    let bin = Path::new(&rel).file_name().unwrap().to_string_lossy().into_owned();
-    write_executable(&w.source_path(&rel), package::shim_script(&specifier, &bin, true).as_bytes());
+    let bin = Path::new(&rel)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    write_executable(
+        &w.source_path(&rel),
+        package::shim_script(&specifier, &bin, true).as_bytes(),
+    );
 }
 
 #[given(expr = "source lazy shim {string} for specifier {string}")]
 fn source_lazy_shim(w: &mut World, rel: String, specifier: String) {
-    let bin = Path::new(&rel).file_name().unwrap().to_string_lossy().into_owned();
-    write_executable(&w.source_path(&rel), package::shim_script(&specifier, &bin, false).as_bytes());
+    let bin = Path::new(&rel)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    write_executable(
+        &w.source_path(&rel),
+        package::shim_script(&specifier, &bin, false).as_bytes(),
+    );
 }
 
 #[given(expr = "target file {string} already exists with content {string}")]
@@ -130,15 +150,19 @@ fn target_file_deleted(w: &mut World, rel: String) {
 
 #[given(expr = "target directory {string} exists containing file {string} with {string}")]
 fn target_dir_with_file(w: &mut World, dir: String, file: String, content: String) {
-    write_file(&w.target_path(&dir).join(&file), unescape(&content).as_bytes());
+    write_file(
+        &w.target_path(&dir).join(&file),
+        unescape(&content).as_bytes(),
+    );
 }
 
 #[given(expr = "target file {string} accumulates key {string} with value {int}")]
 fn target_json_accumulates(w: &mut World, rel: String, key: String, value: i64) {
     let path = w.target_path(&rel);
-    let mut json: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    json.as_object_mut().unwrap().insert(key, serde_json::Value::from(value));
+    let mut json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    json.as_object_mut()
+        .unwrap()
+        .insert(key, serde_json::Value::from(value));
     fs::write(&path, serde_json::to_string(&json).unwrap()).unwrap();
 }
 
@@ -234,7 +258,10 @@ fn bootstrapped(w: &mut World) {
 #[when(expr = "I run every documented command with no flags and HOME set to the target")]
 fn run_every_command_zero_flag(w: &mut World) {
     let mysh = w.target_path(".mysh/bin/mysh");
-    assert!(mysh.is_file(), "bootstrap must have installed the binary first");
+    assert!(
+        mysh.is_file(),
+        "bootstrap must have installed the binary first"
+    );
     write_file(&w.target_path("zeroflag.txt"), b"zero flag fodder");
     let commands: &[(&str, &[&str], &str)] = &[
         ("apply", &[], ""),
@@ -327,12 +354,20 @@ fn has_line(w: &World, line: &str) -> bool {
 
 #[then(expr = "the output reports target drift for {string}")]
 fn output_target_drift(w: &mut World, rel: String) {
-    assert!(has_line(w, &format!("{rel}\ttarget")), "no target drift line for {rel}: {}", w.stdout());
+    assert!(
+        has_line(w, &format!("{rel}\ttarget")),
+        "no target drift line for {rel}: {}",
+        w.stdout()
+    );
 }
 
 #[then(expr = "the output reports remote drift for {string}")]
 fn output_remote_drift(w: &mut World, rel: String) {
-    assert!(has_line(w, &format!("{rel}\tremote")), "no remote drift line for {rel}: {}", w.stdout());
+    assert!(
+        has_line(w, &format!("{rel}\tremote")),
+        "no remote drift line for {rel}: {}",
+        w.stdout()
+    );
 }
 
 #[then(expr = "the output reports no target drift")]
@@ -355,17 +390,29 @@ fn output_no_remote_drift(w: &mut World) {
 
 #[then(expr = "the output flags {string} as new")]
 fn output_flags_new(w: &mut World, rel: String) {
-    assert!(has_line(w, &format!("{rel}\tnew")), "no new-file line for {rel}: {}", w.stdout());
+    assert!(
+        has_line(w, &format!("{rel}\tnew")),
+        "no new-file line for {rel}: {}",
+        w.stdout()
+    );
 }
 
 #[then(expr = "the output flags {string} as missing")]
 fn output_flags_missing(w: &mut World, rel: String) {
-    assert!(has_line(w, &format!("{rel}\tmissing")), "no missing-file line for {rel}: {}", w.stdout());
+    assert!(
+        has_line(w, &format!("{rel}\tmissing")),
+        "no missing-file line for {rel}: {}",
+        w.stdout()
+    );
 }
 
 #[then(expr = "the output does not mention {string}")]
 fn output_does_not_mention(w: &mut World, needle: String) {
-    assert!(!w.stdout().contains(&needle), "output mentions {needle:?}: {}", w.stdout());
+    assert!(
+        !w.stdout().contains(&needle),
+        "output mentions {needle:?}: {}",
+        w.stdout()
+    );
 }
 
 #[then(expr = "the output reports nothing to save")]
@@ -417,7 +464,10 @@ fn target_contains(w: &mut World, rel: String, content: String) {
 
 #[then(expr = "target {string} does not exist")]
 fn target_does_not_exist(w: &mut World, rel: String) {
-    assert!(!w.target_path(&rel).exists(), "target {rel} should not exist");
+    assert!(
+        !w.target_path(&rel).exists(),
+        "target {rel} should not exist"
+    );
 }
 
 #[then(expr = "source {string} contains exactly {string}")]
@@ -435,7 +485,10 @@ fn source_exists(w: &mut World, rel: String) {
 
 #[then(expr = "source {string} does not exist")]
 fn source_does_not_exist(w: &mut World, rel: String) {
-    assert!(!w.source_path(&rel).exists(), "source {rel} should not exist");
+    assert!(
+        !w.source_path(&rel).exists(),
+        "source {rel} should not exist"
+    );
 }
 
 #[then(expr = "source {string} does not contain the plaintext {string}")]
@@ -450,7 +503,8 @@ fn source_not_plaintext(w: &mut World, rel: String, plaintext: String) {
 #[then(expr = "re-rendering {string} from source yields exactly {string}")]
 fn rerender_yields(w: &mut World, rel: String, content: String) {
     let path = w.source_path(&format!("{rel}.age"));
-    let envelope = fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let envelope =
+        fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     let plaintext = crypto::decrypt(&envelope, TEST_PASSPHRASE, &path).unwrap();
     assert_eq!(String::from_utf8_lossy(&plaintext), unescape(&content));
 }
@@ -460,9 +514,16 @@ fn target_permissions(w: &mut World, rel: String, mode: String) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let actual = fs::metadata(w.target_path(&rel)).unwrap().permissions().mode() & 0o777;
+        let actual = fs::metadata(w.target_path(&rel))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
         let expected = u32::from_str_radix(&mode, 8).unwrap();
-        assert_eq!(actual, expected, "target {rel} mode {actual:o} != {expected:o}");
+        assert_eq!(
+            actual, expected,
+            "target {rel} mode {actual:o} != {expected:o}"
+        );
     }
 }
 
@@ -471,8 +532,14 @@ fn target_executable(w: &mut World, rel: String) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(w.target_path(&rel)).unwrap().permissions().mode();
-        assert!(mode & 0o111 != 0, "target {rel} is not executable (mode {mode:o})");
+        let mode = fs::metadata(w.target_path(&rel))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "target {rel} is not executable (mode {mode:o})"
+        );
     }
 }
 
@@ -509,7 +576,10 @@ fn no_mysh_residue(w: &mut World) {
 
 #[then(expr = "the mise data directory does not exist")]
 fn mise_data_dir_gone(w: &mut World) {
-    assert!(!w.target_path(".mysh/mise").exists(), "mise data dir remains");
+    assert!(
+        !w.target_path(".mysh/mise").exists(),
+        "mise data dir remains"
+    );
 }
 
 // =========================================================================
@@ -519,27 +589,43 @@ fn mise_data_dir_gone(w: &mut World) {
 #[then(expr = "the shim {string} invokes mise with specifier {string}")]
 fn shim_specifier_is(w: &mut World, rel: String, specifier: String) {
     let content = fs::read_to_string(w.source_path(&rel)).unwrap();
-    assert_eq!(package::shim_specifier(&content), Some(specifier.as_str()), "shim {rel}");
+    assert_eq!(
+        package::shim_specifier(&content),
+        Some(specifier.as_str()),
+        "shim {rel}"
+    );
 }
 
 #[then(expr = "the shim {string} contains no absolute device-specific path")]
 fn shim_portable(w: &mut World, rel: String) {
     let content = fs::read_to_string(w.source_path(&rel)).unwrap();
     let tmp = w.tmp.0.to_string_lossy().into_owned();
-    assert!(!content.contains(&tmp), "shim {rel} bakes in the device path");
-    assert!(content.contains("$HOME"), "shim {rel} must resolve $HOME at run time");
+    assert!(
+        !content.contains(&tmp),
+        "shim {rel} bakes in the device path"
+    );
+    assert!(
+        content.contains("$HOME"),
+        "shim {rel} must resolve $HOME at run time"
+    );
 }
 
 #[then(expr = "the shim {string} is marked eager")]
 fn shim_eager(w: &mut World, rel: String) {
     let content = fs::read_to_string(w.source_path(&rel)).unwrap();
-    assert!(package::is_eager(&content), "shim {rel} lacks the eager marker");
+    assert!(
+        package::is_eager(&content),
+        "shim {rel} lacks the eager marker"
+    );
 }
 
 #[then(expr = "the shim {string} is not marked eager")]
 fn shim_not_eager(w: &mut World, rel: String) {
     let content = fs::read_to_string(w.source_path(&rel)).unwrap();
-    assert!(!package::is_eager(&content), "shim {rel} unexpectedly eager");
+    assert!(
+        !package::is_eager(&content),
+        "shim {rel} unexpectedly eager"
+    );
 }
 
 // =========================================================================
@@ -549,23 +635,48 @@ fn shim_not_eager(w: &mut World, rel: String) {
 #[then(expr = "the log records full ownership of {string} with no backup")]
 fn log_full_no_backup(w: &mut World, rel: String) {
     let entries = w.log_target_entries(&rel);
-    assert_eq!(entries.len(), 1, "expected one log entry for {rel}: {}", w.log_text());
+    assert_eq!(
+        entries.len(),
+        1,
+        "expected one log entry for {rel}: {}",
+        w.log_text()
+    );
     assert_eq!(entries[0][1], "full");
-    assert_eq!(entries[0].len(), 3, "expected no backup field: {:?}", entries[0]);
+    assert_eq!(
+        entries[0].len(),
+        3,
+        "expected no backup field: {:?}",
+        entries[0]
+    );
 }
 
 #[then(expr = "the log records full ownership of {string} with a backup")]
 fn log_full_with_backup(w: &mut World, rel: String) {
     let entries = w.log_target_entries(&rel);
-    assert_eq!(entries.len(), 1, "expected one log entry for {rel}: {}", w.log_text());
+    assert_eq!(
+        entries.len(),
+        1,
+        "expected one log entry for {rel}: {}",
+        w.log_text()
+    );
     assert_eq!(entries[0][1], "full");
-    assert_eq!(entries[0].len(), 4, "expected a backup field: {:?}", entries[0]);
+    assert_eq!(
+        entries[0].len(),
+        4,
+        "expected a backup field: {:?}",
+        entries[0]
+    );
 }
 
 #[then(expr = "the log records partial ownership of {string}")]
 fn log_partial(w: &mut World, rel: String) {
     let entries = w.log_target_entries(&rel);
-    assert_eq!(entries.len(), 1, "expected one log entry for {rel}: {}", w.log_text());
+    assert_eq!(
+        entries.len(),
+        1,
+        "expected one log entry for {rel}: {}",
+        w.log_text()
+    );
     assert_eq!(entries[0][1], "partial");
 }
 
@@ -588,7 +699,9 @@ fn log_one_entry(w: &mut World, rel: String) {
 #[then(expr = "the log records the mise bootstrap")]
 fn log_mise_bootstrap(w: &mut World) {
     assert!(
-        w.log_text().lines().any(|l| l.starts_with("mise-bootstrapped\t")),
+        w.log_text()
+            .lines()
+            .any(|l| l.starts_with("mise-bootstrapped\t")),
         "no mise-bootstrapped entry: {}",
         w.log_text()
     );
@@ -598,7 +711,9 @@ fn log_mise_bootstrap(w: &mut World) {
 fn summary_left_in_place(w: &mut World, rel: String) {
     let stdout = w.stdout();
     assert!(
-        stdout.lines().any(|l| l.contains("leave") && l.contains(&rel)),
+        stdout
+            .lines()
+            .any(|l| l.contains("leave") && l.contains(&rel)),
         "no leave-in-place summary line for {rel}: {stdout}"
     );
 }
@@ -610,12 +725,19 @@ fn summary_left_in_place(w: &mut World, rel: String) {
 #[then(expr = "the remote's latest commit contains {string} with {string}")]
 fn remote_commit_contains(w: &mut World, rel: String, content: String) {
     let actual = w.remote_file(&rel);
-    assert_eq!(String::from_utf8_lossy(&actual), unescape(&content), "remote {rel}");
+    assert_eq!(
+        String::from_utf8_lossy(&actual),
+        unescape(&content),
+        "remote {rel}"
+    );
 }
 
 #[then(expr = "the remote is unchanged")]
 fn remote_unchanged(w: &mut World) {
-    let before = w.remote_snapshot.as_ref().expect("no remote snapshot recorded");
+    let before = w
+        .remote_snapshot
+        .as_ref()
+        .expect("no remote snapshot recorded");
     assert_eq!(&w.remote_head(), before, "remote HEAD moved");
 }
 
@@ -635,12 +757,18 @@ fn curl_never(w: &mut World) {
 
 #[then(expr = "the mysh-owned mise binary exists")]
 fn owned_mise_exists(w: &mut World) {
-    assert!(w.target_path(".mysh/bin/mise").is_file(), "no mise at .mysh/bin/mise");
+    assert!(
+        w.target_path(".mysh/bin/mise").is_file(),
+        "no mise at .mysh/bin/mise"
+    );
 }
 
 #[then(expr = "the mysh-owned mise binary does not exist")]
 fn owned_mise_absent(w: &mut World) {
-    assert!(!w.target_path(".mysh/bin/mise").exists(), "unexpected mise at .mysh/bin/mise");
+    assert!(
+        !w.target_path(".mysh/bin/mise").exists(),
+        "unexpected mise at .mysh/bin/mise"
+    );
 }
 
 fn install_lines(w: &World) -> Vec<String> {
@@ -652,7 +780,12 @@ fn install_lines(w: &World) -> Vec<String> {
 
 #[then(expr = "the mise stub saw exactly one install invocation")]
 fn mise_one_install(w: &mut World) {
-    assert_eq!(install_lines(w).len(), 1, "calls: {:?}", w.stub_calls("mise.calls"));
+    assert_eq!(
+        install_lines(w).len(),
+        1,
+        "calls: {:?}",
+        w.stub_calls("mise.calls")
+    );
 }
 
 #[then(expr = "that install invocation named specifiers {string} and {string}")]
@@ -669,14 +802,22 @@ fn install_not_named(w: &mut World, spec: String) {
     let lines = install_lines(w);
     let line = lines.first().expect("no install invocation recorded");
     let words: Vec<&str> = line.split_whitespace().collect();
-    assert!(!words.contains(&spec.as_str()), "{line} unexpectedly names {spec}");
+    assert!(
+        !words.contains(&spec.as_str()),
+        "{line} unexpectedly names {spec}"
+    );
 }
 
-#[then(expr = "the mise stub saw an x invocation for specifier {string} running {string} with {string}")]
+#[then(
+    expr = "the mise stub saw an x invocation for specifier {string} running {string} with {string}"
+)]
 fn mise_x_invocation(w: &mut World, spec: String, bin: String, arg: String) {
     let expected = format!("x {spec} -- {bin} {arg}");
     let calls = w.stub_calls("mise.calls");
-    assert!(calls.iter().any(|l| l == &expected), "no call {expected:?} in {calls:?}");
+    assert!(
+        calls.iter().any(|l| l == &expected),
+        "no call {expected:?} in {calls:?}"
+    );
 }
 
 // =========================================================================
@@ -699,14 +840,23 @@ fn path_line(w: &World, rel: &str) -> String {
 
 #[then(expr = "the rc file adds {string} to PATH")]
 fn rc_adds_path(w: &mut World, rel: String) {
-    assert!(rc_text(w).contains(&path_line(w, &rel)), "rc file: {}", rc_text(w));
+    assert!(
+        rc_text(w).contains(&path_line(w, &rel)),
+        "rc file: {}",
+        rc_text(w)
+    );
 }
 
 #[then(expr = "the rc file adds {string} to PATH exactly once")]
 fn rc_adds_path_once(w: &mut World, rel: String) {
     let line = path_line(w, &rel);
     let count = rc_text(w).matches(&line).count();
-    assert_eq!(count, 1, "PATH line appears {count} times in rc: {}", rc_text(w));
+    assert_eq!(
+        count,
+        1,
+        "PATH line appears {count} times in rc: {}",
+        rc_text(w)
+    );
 }
 
 #[then(expr = "the rc file exports MISE_DATA_DIR pointing at {string}")]
@@ -717,19 +867,33 @@ fn rc_exports_data_dir(w: &mut World, rel: String) {
 
 #[then(expr = "the rc file contains exactly {string}")]
 fn rc_contains_exactly(w: &mut World, content: String) {
-    assert_eq!(rc_text(w).trim_end(), unescape(&content).trim_end(), "rc file not restored");
+    assert_eq!(
+        rc_text(w).trim_end(),
+        unescape(&content).trim_end(),
+        "rc file not restored"
+    );
 }
 
 #[then(expr = "the log records the bootstrap install and the PATH addition")]
 fn log_bootstrap_entries(w: &mut World) {
     let log = w.log_text();
-    assert!(log.lines().any(|l| l.starts_with("bootstrap-installed\t")), "log: {log}");
-    assert!(log.lines().any(|l| l.starts_with("bootstrap-path-added\t")), "log: {log}");
+    assert!(
+        log.lines().any(|l| l.starts_with("bootstrap-installed\t")),
+        "log: {log}"
+    );
+    assert!(
+        log.lines().any(|l| l.starts_with("bootstrap-path-added\t")),
+        "log: {log}"
+    );
 }
 
 #[then(expr = "the log records the bootstrap install exactly once")]
 fn log_bootstrap_once(w: &mut World) {
-    let count = w.log_text().lines().filter(|l| l.starts_with("bootstrap-installed\t")).count();
+    let count = w
+        .log_text()
+        .lines()
+        .filter(|l| l.starts_with("bootstrap-installed\t"))
+        .count();
     assert_eq!(count, 1, "log: {}", w.log_text());
 }
 
@@ -768,10 +932,35 @@ fn release_checkout(w: &mut World) -> std::path::PathBuf {
     }
     let bare = w.tmp.0.join("release-origin.git");
     let checkout = w.tmp.0.join("release");
-    w.git(&["init", "-q", "--bare", "--initial-branch=main", bare.to_str().unwrap()]);
-    w.git(&["clone", "-q", env!("CARGO_MANIFEST_DIR"), checkout.to_str().unwrap()]);
-    w.git(&["-C", checkout.to_str().unwrap(), "remote", "set-url", "origin", bare.to_str().unwrap()]);
-    w.git(&["-C", checkout.to_str().unwrap(), "push", "-q", "origin", "HEAD:main"]);
+    w.git(&[
+        "init",
+        "-q",
+        "--bare",
+        "--initial-branch=main",
+        bare.to_str().unwrap(),
+    ]);
+    w.git(&[
+        "clone",
+        "-q",
+        env!("CARGO_MANIFEST_DIR"),
+        checkout.to_str().unwrap(),
+    ]);
+    w.git(&[
+        "-C",
+        checkout.to_str().unwrap(),
+        "remote",
+        "set-url",
+        "origin",
+        bare.to_str().unwrap(),
+    ]);
+    w.git(&[
+        "-C",
+        checkout.to_str().unwrap(),
+        "push",
+        "-q",
+        "origin",
+        "HEAD:main",
+    ]);
     w.release_dir = Some(checkout.clone());
     checkout
 }
@@ -848,7 +1037,11 @@ fn run_release_twice(w: &mut World) {
 
 #[then(expr = "both runs succeed")]
 fn release_both_succeed(w: &mut World) {
-    let releases: Vec<_> = w.batch.iter().filter(|(n, _)| n.starts_with("release-")).collect();
+    let releases: Vec<_> = w
+        .batch
+        .iter()
+        .filter(|(n, _)| n.starts_with("release-"))
+        .collect();
     assert_eq!(releases.len(), 2);
     for (name, output) in releases {
         assert!(
@@ -862,8 +1055,12 @@ fn release_both_succeed(w: &mut World) {
 #[then(expr = "the first run creates the {string} release and the second updates it")]
 fn release_create_then_update(w: &mut World, tag: String) {
     let calls = w.stub_calls("gh.calls");
-    let create = calls.iter().position(|l| l.starts_with(&format!("release create {tag}")));
-    let edit = calls.iter().position(|l| l.starts_with(&format!("release edit {tag}")));
+    let create = calls
+        .iter()
+        .position(|l| l.starts_with(&format!("release create {tag}")));
+    let edit = calls
+        .iter()
+        .position(|l| l.starts_with(&format!("release edit {tag}")));
     let create = create.unwrap_or_else(|| panic!("no release create in {calls:?}"));
     let edit = edit.unwrap_or_else(|| panic!("no release edit in {calls:?}"));
     assert!(create < edit, "create must precede edit: {calls:?}");
@@ -883,7 +1080,6 @@ fn release_fails_with_instructions(w: &mut World) {
 // helpers
 // =========================================================================
 
-
 /// Cucumber's {string} parameter keeps backslash escapes literally; undo the
 /// one that matters for quoted JSON content in feature files.
 fn unescape(s: &str) -> String {
@@ -891,13 +1087,18 @@ fn unescape(s: &str) -> String {
 }
 
 fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
-    !needle.is_empty() && haystack.windows(needle.len()).any(|window| window == needle)
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
 }
 
 /// Every `.age` file under `dir`, source-relative.
 fn age_files(root: &Path, dir: &Path) -> Vec<String> {
     let mut found = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return found };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return found;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.file_name().is_some_and(|n| n == ".git") {
@@ -906,7 +1107,12 @@ fn age_files(root: &Path, dir: &Path) -> Vec<String> {
         if path.is_dir() {
             found.extend(age_files(root, &path));
         } else if path.extension().is_some_and(|e| e == "age") {
-            found.push(path.strip_prefix(root).unwrap().to_string_lossy().into_owned());
+            found.push(
+                path.strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            );
         }
     }
     found

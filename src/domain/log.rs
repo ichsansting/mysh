@@ -21,7 +21,11 @@ pub enum LogEntry {
     /// `target\t<full|partial>\t<rel>[\t<backup-rel>]` — a rendered Target file.
     /// Full + backup = pre-existing content saved under `.mysh/backups/`;
     /// Full without backup = created fresh.
-    Target { ownership: Ownership, rel: PathBuf, backup_rel: Option<PathBuf> },
+    Target {
+        ownership: Ownership,
+        rel: PathBuf,
+        backup_rel: Option<PathBuf>,
+    },
     /// `mise-bootstrapped\t<abs-data-path>` — mysh installed mise itself.
     MiseBootstrapped { path: PathBuf },
     /// `bootstrap-installed\t<abs-path>` — bootstrap.sh placed the mysh binary.
@@ -33,14 +37,22 @@ pub enum LogEntry {
 impl LogEntry {
     fn format(&self) -> String {
         match self {
-            LogEntry::Target { ownership, rel, backup_rel } => {
+            LogEntry::Target {
+                ownership,
+                rel,
+                backup_rel,
+            } => {
                 let ownership = match ownership {
                     Ownership::Full => "full",
                     Ownership::Partial => "partial",
                 };
                 match backup_rel {
                     Some(backup) => {
-                        format!("target\t{ownership}\t{}\t{}", rel.display(), backup.display())
+                        format!(
+                            "target\t{ownership}\t{}\t{}",
+                            rel.display(),
+                            backup.display()
+                        )
                     }
                     None => format!("target\t{ownership}\t{}", rel.display()),
                 }
@@ -67,14 +79,18 @@ impl LogEntry {
                     _ => return None,
                 };
                 let backup_rel = fields.get(3).map(PathBuf::from);
-                Some(LogEntry::Target { ownership, rel: PathBuf::from(rel), backup_rel })
+                Some(LogEntry::Target {
+                    ownership,
+                    rel: PathBuf::from(rel),
+                    backup_rel,
+                })
             }
-            ["mise-bootstrapped", path] => {
-                Some(LogEntry::MiseBootstrapped { path: PathBuf::from(path) })
-            }
-            ["bootstrap-installed", path] => {
-                Some(LogEntry::BootstrapInstalled { path: PathBuf::from(path) })
-            }
+            ["mise-bootstrapped", path] => Some(LogEntry::MiseBootstrapped {
+                path: PathBuf::from(path),
+            }),
+            ["bootstrap-installed", path] => Some(LogEntry::BootstrapInstalled {
+                path: PathBuf::from(path),
+            }),
             ["bootstrap-path-added", rc_file, line] => Some(LogEntry::BootstrapPathAdded {
                 rc_file: PathBuf::from(rc_file),
                 line: line.to_string(),
@@ -91,7 +107,9 @@ pub struct AppLog {
 
 impl AppLog {
     pub fn at(target_dir: &Path) -> AppLog {
-        AppLog { path: target_dir.join(LOG_REL) }
+        AppLog {
+            path: target_dir.join(LOG_REL),
+        }
     }
 
     /// Every recognized entry plus the count of unrecognized lines (which stay
@@ -162,8 +180,12 @@ mod tests {
                 rel: PathBuf::from(".claude.json"),
                 backup_rel: None,
             },
-            LogEntry::MiseBootstrapped { path: PathBuf::from("/t/.mysh/bin/mise") },
-            LogEntry::BootstrapInstalled { path: PathBuf::from("/t/.mysh/bin/mysh") },
+            LogEntry::MiseBootstrapped {
+                path: PathBuf::from("/t/.mysh/bin/mise"),
+            },
+            LogEntry::BootstrapInstalled {
+                path: PathBuf::from("/t/.mysh/bin/mysh"),
+            },
             LogEntry::BootstrapPathAdded {
                 rc_file: PathBuf::from("/t/rc"),
                 line: "export PATH=\"/t/.mysh/bin:$PATH\"".into(),

@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::domain::render::{self, RenderKind, SourcePlan};
-use crate::domain::{overlay, package, BACKUP_DIR_REL};
+use crate::domain::{BACKUP_DIR_REL, overlay, package};
 use crate::error::{IoCtx, Result};
 use crate::infra::prompt::PassphraseFn;
 use crate::infra::{crypto, fsx};
@@ -35,11 +35,13 @@ fn prewarm_packages(config: &Config, log: &AppLog) -> Result<()> {
         let path = bin_dir.join(rel);
         // Non-UTF-8 or hand-edited content that isn't an add-written shim
         // simply isn't prewarmable — it stays lazy, never an error (ADR-0007).
-        let Ok(content) = fs::read_to_string(&path) else { continue };
-        if package::is_eager(&content) {
-            if let Some(specifier) = package::shim_specifier(&content) {
-                specifiers.insert(specifier.to_string());
-            }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if package::is_eager(&content)
+            && let Some(specifier) = package::shim_specifier(&content)
+        {
+            specifiers.insert(specifier.to_string());
         }
     }
     if !specifiers.is_empty() {
@@ -70,7 +72,14 @@ pub fn render_plan(
                 let envelope = fs::read(&source).at("read", &source)?;
                 let plaintext = crypto::decrypt(&envelope, &passphrase()?, &source)?;
                 // 0600 always: a decrypted credential is never left group/world-readable.
-                write_fully_owned(config, log, &managed, &unit.target_rel, &plaintext, Some(0o600))?;
+                write_fully_owned(
+                    config,
+                    log,
+                    &managed,
+                    &unit.target_rel,
+                    &plaintext,
+                    Some(0o600),
+                )?;
             }
             RenderKind::Fragment => {
                 let content = crate::domain::fragment::compose(&source, passphrase)?;

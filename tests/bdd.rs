@@ -24,8 +24,7 @@ impl TempDir {
     fn new() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir()
-            .join(format!("mysh-bdd-{}-{n}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("mysh-bdd-{}-{n}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         TempDir(path)
     }
@@ -120,7 +119,12 @@ impl World {
             .expect("failed to spawn mysh");
         // A command that never reads stdin (most of them) may exit before the
         // answer is written — that BrokenPipe is expected, not a failure.
-        match child.stdin.take().unwrap().write_all(answer.unwrap_or("").as_bytes()) {
+        match child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(answer.unwrap_or("").as_bytes())
+        {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
             Err(e) => panic!("failed to write mysh stdin: {e}"),
@@ -171,14 +175,31 @@ impl World {
     /// Initializes the bare Remote and turns the (empty) source dir into a clone of it.
     pub fn init_bare_remote(&mut self) {
         let remote = self.tmp.0.join("remote.git");
-        self.git(&["init", "-q", "--bare", "--initial-branch=main", remote.to_str().unwrap()]);
+        self.git(&[
+            "init",
+            "-q",
+            "--bare",
+            "--initial-branch=main",
+            remote.to_str().unwrap(),
+        ]);
         assert!(
             fs::read_dir(&self.source).unwrap().next().is_none(),
             "a bare remote must be declared before any source file"
         );
         fs::remove_dir(&self.source).unwrap();
-        self.git(&["clone", "-q", remote.to_str().unwrap(), self.source.to_str().unwrap()]);
-        self.git(&["-C", self.source.to_str().unwrap(), "symbolic-ref", "HEAD", "refs/heads/main"]);
+        self.git(&[
+            "clone",
+            "-q",
+            remote.to_str().unwrap(),
+            self.source.to_str().unwrap(),
+        ]);
+        self.git(&[
+            "-C",
+            self.source.to_str().unwrap(),
+            "symbolic-ref",
+            "HEAD",
+            "refs/heads/main",
+        ]);
         self.remote = Some(remote);
     }
 
@@ -186,10 +207,17 @@ impl World {
         let src = self.source.to_str().unwrap();
         self.git(&["-C", src, "add", "-A"]);
         self.git(&[
-            "-C", src,
-            "-c", "user.name=bdd",
-            "-c", "user.email=bdd@test",
-            "commit", "-q", "--allow-empty", "-m", "bdd seed",
+            "-C",
+            src,
+            "-c",
+            "user.name=bdd",
+            "-c",
+            "user.email=bdd@test",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "bdd seed",
         ]);
     }
 
@@ -202,16 +230,27 @@ impl World {
     pub fn push_from_another_device(&self, rel: &str, content: &str) {
         let remote = self.remote.as_ref().expect("no bare remote declared");
         let device = self.tmp.0.join("device2");
-        self.git(&["clone", "-q", remote.to_str().unwrap(), device.to_str().unwrap()]);
+        self.git(&[
+            "clone",
+            "-q",
+            remote.to_str().unwrap(),
+            device.to_str().unwrap(),
+        ]);
         let dev = device.to_str().unwrap();
         self.git(&["-C", dev, "symbolic-ref", "HEAD", "refs/heads/main"]);
         write_file(&device.join(rel), content.as_bytes());
         self.git(&["-C", dev, "add", "-A"]);
         self.git(&[
-            "-C", dev,
-            "-c", "user.name=bdd2",
-            "-c", "user.email=bdd2@test",
-            "commit", "-q", "-m", "from another device",
+            "-C",
+            dev,
+            "-c",
+            "user.name=bdd2",
+            "-c",
+            "user.email=bdd2@test",
+            "commit",
+            "-q",
+            "-m",
+            "from another device",
         ]);
         self.git(&["-C", dev, "push", "-q", "origin", "HEAD:main"]);
         fs::remove_dir_all(&device).unwrap();
@@ -220,7 +259,13 @@ impl World {
     /// A file's content at the Remote's current main tip.
     pub fn remote_file(&self, rel: &str) -> Vec<u8> {
         let remote = self.remote.as_ref().expect("no bare remote declared");
-        self.git(&["-C", remote.to_str().unwrap(), "show", &format!("main:{rel}")]).stdout
+        self.git(&[
+            "-C",
+            remote.to_str().unwrap(),
+            "show",
+            &format!("main:{rel}"),
+        ])
+        .stdout
     }
 
     pub fn remote_head(&self) -> String {
@@ -307,12 +352,20 @@ exit 0
     }
 
     pub fn assert_tree_unchanged(&self) {
-        let (root, before) = self.tree_snapshot.as_ref().expect("no tree snapshot recorded");
+        let (root, before) = self
+            .tree_snapshot
+            .as_ref()
+            .expect("no tree snapshot recorded");
         let mut after = TreeSnapshot::new();
         snapshot_into(root, root, &mut after);
         let before_keys: Vec<_> = before.keys().collect();
         let after_keys: Vec<_> = after.keys().collect();
-        assert_eq!(before_keys, after_keys, "file set under {} changed", root.display());
+        assert_eq!(
+            before_keys,
+            after_keys,
+            "file set under {} changed",
+            root.display()
+        );
         for (rel, (bytes, mtime)) in before {
             let (after_bytes, after_mtime) = &after[rel];
             assert_eq!(bytes, after_bytes, "{rel} content changed");
@@ -339,7 +392,10 @@ exit 0
         self.log_text()
             .lines()
             .map(|line| line.split('\t').map(str::to_string).collect::<Vec<_>>())
-            .filter(|fields| fields.first().is_some_and(|k| k == "target") && fields.get(2).is_some_and(|p| p == rel))
+            .filter(|fields| {
+                fields.first().is_some_and(|k| k == "target")
+                    && fields.get(2).is_some_and(|p| p == rel)
+            })
             .collect()
     }
 }
@@ -374,7 +430,11 @@ fn snapshot_into(root: &Path, dir: &Path, map: &mut TreeSnapshot) {
         if path.is_dir() {
             snapshot_into(root, &path, map);
         } else {
-            let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
             let bytes = fs::read(&path).unwrap();
             let mtime = fs::metadata(&path).unwrap().modified().unwrap();
             map.insert(rel, (bytes, mtime));
@@ -385,5 +445,8 @@ fn snapshot_into(root: &Path, dir: &Path, map: &mut TreeSnapshot) {
 #[tokio::main]
 async fn main() {
     use cucumber::World as _;
-    World::cucumber().fail_on_skipped().run_and_exit("features").await;
+    World::cucumber()
+        .fail_on_skipped()
+        .run_and_exit("features")
+        .await;
 }

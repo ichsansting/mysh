@@ -1,6 +1,6 @@
-use crate::config::{take_flag, take_switch, Config};
+use crate::config::{Config, take_flag, take_switch};
 use crate::domain::render::{self, TRACK_MARKER};
-use crate::domain::{glob, package, BIN_DIR_REL};
+use crate::domain::{BIN_DIR_REL, glob, package};
 use crate::error::{Error, IoCtx, Result};
 use crate::infra::{crypto, fsx, prompt};
 use std::fs;
@@ -23,7 +23,9 @@ pub fn run(config: &Config, leftover: Vec<String>, input: &mut dyn BufRead) -> R
         ignores.push(pattern);
     }
     let [argument] = args.as_slice() else {
-        return Err(Error::Usage("add expects exactly one <path|specifier>".to_string()));
+        return Err(Error::Usage(
+            "add expects exactly one <path|specifier>".to_string(),
+        ));
     };
 
     let live = config.target_dir.join(argument);
@@ -31,12 +33,16 @@ pub fn run(config: &Config, leftover: Vec<String>, input: &mut dyn BufRead) -> R
         add_file(config, Path::new(argument), secret)
     } else if live.is_dir() {
         if secret {
-            return Err(Error::Usage("--secret applies to a single file, not a directory".into()));
+            return Err(Error::Usage(
+                "--secret applies to a single file, not a directory".into(),
+            ));
         }
         add_folder(config, Path::new(argument), &ignores, input)
     } else {
         if secret {
-            return Err(Error::Usage("--secret applies to a file, not a package specifier".into()));
+            return Err(Error::Usage(
+                "--secret applies to a file, not a package specifier".into(),
+            ));
         }
         add_package(config, argument, bin.as_deref(), eager)
     }
@@ -95,7 +101,11 @@ fn add_folder(
     }
 
     let source_root = config.source_dir.join(rel);
-    fsx::write_if_changed(&source_root.join(TRACK_MARKER), ignores.join("\n").as_bytes(), None)?;
+    fsx::write_if_changed(
+        &source_root.join(TRACK_MARKER),
+        ignores.join("\n").as_bytes(),
+        None,
+    )?;
     for file in &matched {
         let live = live_root.join(file);
         let content = fs::read(&live).at("read", &live)?;
@@ -105,8 +115,9 @@ fn add_folder(
 }
 
 fn add_package(config: &Config, specifier: &str, bin: Option<&str>, eager: bool) -> Result<String> {
-    let bin_name =
-        bin.map(str::to_string).unwrap_or_else(|| package::default_bin_name(specifier));
+    let bin_name = bin
+        .map(str::to_string)
+        .unwrap_or_else(|| package::default_bin_name(specifier));
     let shim_rel = Path::new(BIN_DIR_REL).join(&bin_name);
     let dest = config.source_dir.join(&shim_rel);
     if dest.exists() {

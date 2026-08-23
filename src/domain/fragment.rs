@@ -1,7 +1,7 @@
+use crate::domain::render;
 use crate::error::{IoCtx, Result};
 use crate::infra::crypto;
 use crate::infra::prompt::PassphraseFn;
-use crate::domain::render;
 use std::fs;
 use std::path::Path;
 

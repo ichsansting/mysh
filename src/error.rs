@@ -7,9 +7,16 @@ use std::path::{Path, PathBuf};
 #[derive(Debug)]
 pub enum Error {
     /// A filesystem operation failed; `op` is a short verb ("read", "write", "walk").
-    Io { op: &'static str, path: PathBuf, source: io::Error },
+    Io {
+        op: &'static str,
+        path: PathBuf,
+        source: io::Error,
+    },
     /// A subprocess (git, mise, curl) failed or couldn't be spawned.
-    Subprocess { program: &'static str, detail: String },
+    Subprocess {
+        program: &'static str,
+        detail: String,
+    },
     /// Encryption/decryption failed — wrong passphrase and corrupt file are
     /// indistinguishable behind the AEAD tag, so the message never claims to know which.
     Crypto { path: PathBuf, detail: String },
@@ -48,6 +55,10 @@ pub trait IoCtx<T> {
 
 impl<T> IoCtx<T> for io::Result<T> {
     fn at(self, op: &'static str, path: &Path) -> Result<T> {
-        self.map_err(|source| Error::Io { op, path: path.to_path_buf(), source })
+        self.map_err(|source| Error::Io {
+            op,
+            path: path.to_path_buf(),
+            source,
+        })
     }
 }

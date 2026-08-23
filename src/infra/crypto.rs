@@ -15,7 +15,10 @@ fn derive_key(passphrase: &str, salt: &[u8], path: &Path) -> Result<[u8; KEY_LEN
     let mut key = [0u8; KEY_LEN];
     Argon2::default()
         .hash_password_into(passphrase.as_bytes(), salt, &mut key)
-        .map_err(|e| Error::Crypto { path: path.to_path_buf(), detail: format!("key derivation failed: {e}") })?;
+        .map_err(|e| Error::Crypto {
+            path: path.to_path_buf(),
+            detail: format!("key derivation failed: {e}"),
+        })?;
     Ok(key)
 }
 
@@ -23,7 +26,10 @@ fn derive_key(passphrase: &str, salt: &[u8], path: &Path) -> Result<[u8; KEY_LEN
 /// so identical plaintext never produces identical ciphertext. `path` is only for
 /// error reporting.
 pub fn encrypt(plaintext: &[u8], passphrase: &str, path: &Path) -> Result<Vec<u8>> {
-    let fail = |detail: String| Error::Crypto { path: path.to_path_buf(), detail };
+    let fail = |detail: String| Error::Crypto {
+        path: path.to_path_buf(),
+        detail,
+    };
     let mut salt = [0u8; SALT_LEN];
     getrandom::fill(&mut salt).map_err(|e| fail(e.to_string()))?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -45,7 +51,10 @@ pub fn encrypt(plaintext: &[u8], passphrase: &str, path: &Path) -> Result<Vec<u8
 /// Decrypts an `encrypt`-produced envelope. A wrong passphrase and a corrupted file
 /// are indistinguishable behind the AEAD tag, so the error deliberately says neither.
 pub fn decrypt(envelope: &[u8], passphrase: &str, path: &Path) -> Result<Vec<u8>> {
-    let fail = |detail: &str| Error::Crypto { path: path.to_path_buf(), detail: detail.into() };
+    let fail = |detail: &str| Error::Crypto {
+        path: path.to_path_buf(),
+        detail: detail.into(),
+    };
     if envelope.len() < SALT_LEN + NONCE_LEN {
         return Err(fail("too short to be a valid secret envelope"));
     }
@@ -53,8 +62,10 @@ pub fn decrypt(envelope: &[u8], passphrase: &str, path: &Path) -> Result<Vec<u8>
     let (nonce_bytes, ciphertext) = rest.split_at(NONCE_LEN);
 
     let key = derive_key(passphrase, salt, path)?;
-    let cipher = XChaCha20Poly1305::new_from_slice(&key)
-        .map_err(|e| Error::Crypto { path: path.to_path_buf(), detail: e.to_string() })?;
+    let cipher = XChaCha20Poly1305::new_from_slice(&key).map_err(|e| Error::Crypto {
+        path: path.to_path_buf(),
+        detail: e.to_string(),
+    })?;
     let nonce = XNonce::try_from(nonce_bytes).expect("nonce_bytes is NONCE_LEN long");
     cipher
         .decrypt(&nonce, ciphertext)
@@ -86,6 +97,9 @@ mod tests {
 
     #[test]
     fn encrypting_the_same_plaintext_twice_yields_different_ciphertext() {
-        assert_ne!(encrypt(b"same", P, at()).unwrap(), encrypt(b"same", P, at()).unwrap());
+        assert_ne!(
+            encrypt(b"same", P, at()).unwrap(),
+            encrypt(b"same", P, at()).unwrap()
+        );
     }
 }

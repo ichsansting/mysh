@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::domain::MYSH_DIR_REL;
+use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::error::{IoCtx, Result};
 use crate::infra::prompt;
 use std::fs;
@@ -25,7 +25,14 @@ pub fn run(config: &Config, input: &mut dyn BufRead) -> Result<String> {
 
     // Pass 1: fully-owned Target files — delete created, restore overwritten.
     for entry in &entries {
-        let LogEntry::Target { ownership, rel, backup_rel } = entry else { continue };
+        let LogEntry::Target {
+            ownership,
+            rel,
+            backup_rel,
+        } = entry
+        else {
+            continue;
+        };
         if *ownership == Ownership::Partial {
             continue; // ADR-0008: mysh never owned the rest of this file.
         }
@@ -80,13 +87,28 @@ fn summarize(entries: &[LogEntry], unrecognized: usize) -> String {
     let mut lines = Vec::new();
     for entry in entries {
         lines.push(match entry {
-            LogEntry::Target { ownership: Ownership::Partial, rel, .. } => {
-                format!("leave {} (overlay; declared keys stay merged)", rel.display())
+            LogEntry::Target {
+                ownership: Ownership::Partial,
+                rel,
+                ..
+            } => {
+                format!(
+                    "leave {} (overlay; declared keys stay merged)",
+                    rel.display()
+                )
             }
-            LogEntry::Target { rel, backup_rel: Some(_), .. } => {
+            LogEntry::Target {
+                rel,
+                backup_rel: Some(_),
+                ..
+            } => {
                 format!("restore {} to its pre-mysh content", rel.display())
             }
-            LogEntry::Target { rel, backup_rel: None, .. } => {
+            LogEntry::Target {
+                rel,
+                backup_rel: None,
+                ..
+            } => {
                 format!("delete {}", rel.display())
             }
             LogEntry::MiseBootstrapped { path } => {
@@ -123,8 +145,10 @@ fn strip_line(rc_file: &Path, line: &str) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e).at("read", rc_file),
     };
-    let kept: Vec<&str> =
-        text.lines().filter(|l| *l != line && *l != RC_COMMENT).collect();
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| *l != line && *l != RC_COMMENT)
+        .collect();
     let mut result = kept.join("\n");
     if text.ends_with('\n') && !result.is_empty() {
         result.push('\n');

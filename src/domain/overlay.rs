@@ -16,7 +16,10 @@ pub fn read_declared(path: &Path) -> Result<Map<String, Value>> {
         });
     }
     let bytes = fs::read(path).at("read", path)?;
-    as_object(&bytes).map_err(|detail| Error::Overlay { path: path.to_path_buf(), detail })
+    as_object(&bytes).map_err(|detail| Error::Overlay {
+        path: path.to_path_buf(),
+        detail,
+    })
 }
 
 /// Whether every declared key already has its declared value in the live
@@ -24,8 +27,12 @@ pub fn read_declared(path: &Path) -> Result<Map<String, Value>> {
 /// nothing to do — and records nothing.
 pub fn keys_match(live: Option<&[u8]>, declared: &Map<String, Value>) -> bool {
     let Some(bytes) = live else { return false };
-    let Ok(obj) = as_object(bytes) else { return false };
-    declared.iter().all(|(key, value)| obj.get(key) == Some(value))
+    let Ok(obj) = as_object(bytes) else {
+        return false;
+    };
+    declared
+        .iter()
+        .all(|(key, value)| obj.get(key) == Some(value))
 }
 
 /// Shallow-merges the declared keys onto the live content (starting from `{}`
@@ -35,8 +42,10 @@ pub fn merge(live: Option<&[u8]>, declared: &Map<String, Value>, path: &Path) ->
     let mut obj = match live {
         None => Map::new(),
         Some(bytes) if bytes.iter().all(u8::is_ascii_whitespace) => Map::new(),
-        Some(bytes) => as_object(bytes)
-            .map_err(|detail| Error::Overlay { path: path.to_path_buf(), detail })?,
+        Some(bytes) => as_object(bytes).map_err(|detail| Error::Overlay {
+            path: path.to_path_buf(),
+            detail,
+        })?,
     };
     for (key, value) in declared {
         obj.insert(key.clone(), value.clone());

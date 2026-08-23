@@ -60,7 +60,7 @@ A Package whose shim file carries the `# mysh: eager` marker line. Same file, sa
 A Package declared as a real, portable shim file in Source (not a line in a declarations file) — a thin wrapper script whose content resolves `$HOME` and `mise` at run time rather than baking in a device-specific path, so the identical file is correct on every device it's rendered to. Rendered into the isolated prefix like any ordinary tracked file. Not installed until first invoked.
 
 **Application Log**:
-The per-device record of everything mysh has done to that machine: every file it created vs. overwrote (with the original backed up), every Package installed, every PATH/rc-file line it added, and the bootstrap installer's own footprint. What makes Teardown possible.
+The per-device record of everything mysh has done to that machine: every Target it rendered — each entry carrying its ownership explicitly, `full` (created, or overwritten with the original backed up) vs `partial` (Overlay: only declared keys merged) — plus the mise bootstrap, every PATH/rc-file line added, and the bootstrap installer's own footprint. What makes Teardown possible. Schema v2, see ADR-0009; installed Packages are not logged individually — Teardown removes the isolated mise prefix wholesale.
 
 **Teardown**:
 The operation that reverses everything in the Application Log, returning the device to its state from before mysh's install script was ever run. One deliberate exception: an Overlay's Target is left in place, declared keys still merged (see ADR-0008).

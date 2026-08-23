@@ -32,14 +32,24 @@ impl Config {
             .unwrap_or_else(|| target_dir.join(".mysh/source/profile"));
         let passphrase = passphrase.or_else(|| std::env::var("MYSH_PASSPHRASE").ok());
 
-        Ok((Config { source_dir, target_dir, passphrase }, leftover))
+        Ok((
+            Config {
+                source_dir,
+                target_dir,
+                passphrase,
+            },
+            leftover,
+        ))
     }
 }
 
 /// Removes `--name value` / `--name=value` from `args`, returning the value.
 pub fn take_flag(args: &mut Vec<String>, name: &str) -> Result<Option<String>> {
     let prefix = format!("{name}=");
-    let Some(i) = args.iter().position(|a| a == name || a.starts_with(&prefix)) else {
+    let Some(i) = args
+        .iter()
+        .position(|a| a == name || a.starts_with(&prefix))
+    else {
         return Ok(None);
     };
     let arg = args.remove(i);
@@ -54,7 +64,9 @@ pub fn take_flag(args: &mut Vec<String>, name: &str) -> Result<Option<String>> {
 
 /// Removes a boolean `--name` switch from `args`, returning whether it was present.
 pub fn take_switch(args: &mut Vec<String>, name: &str) -> bool {
-    let Some(i) = args.iter().position(|a| a == name) else { return false };
+    let Some(i) = args.iter().position(|a| a == name) else {
+        return false;
+    };
     args.remove(i);
     true
 }

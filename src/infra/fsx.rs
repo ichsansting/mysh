@@ -33,7 +33,10 @@ fn walk_into(
         let entry = entry.at("walk", dir)?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        let rel = path.strip_prefix(root).expect("walked path is under root").to_path_buf();
+        let rel = path
+            .strip_prefix(root)
+            .expect("walked path is under root")
+            .to_path_buf();
         if path.is_dir() {
             if is_internal_dir(&name) {
                 continue;
@@ -59,7 +62,9 @@ pub fn write_if_changed(path: &Path, content: &[u8], mode: Option<u32>) -> Resul
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).at("create directory", parent)?;
     }
-    let unchanged = fs::read(path).map(|existing| existing == content).unwrap_or(false);
+    let unchanged = fs::read(path)
+        .map(|existing| existing == content)
+        .unwrap_or(false);
     if !unchanged {
         fs::write(path, content).at("write", path)?;
     }

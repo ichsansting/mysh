@@ -9,7 +9,8 @@ pub fn is_ignored(rel: &Path, patterns: &[String]) -> bool {
         if pattern.contains('/') {
             matches(pattern, &rel.to_string_lossy())
         } else {
-            rel.file_name().is_some_and(|name| matches(pattern, &name.to_string_lossy()))
+            rel.file_name()
+                .is_some_and(|name| matches(pattern, &name.to_string_lossy()))
         }
     })
 }

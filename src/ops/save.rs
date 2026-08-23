@@ -11,10 +11,16 @@ use std::io::BufRead;
 /// Save: capture live Target edits back into Source, commit, push. Local wins.
 /// Refused for derived Targets (Fragment/Overlay) — there is no unambiguous
 /// Source piece to attribute the edit to.
-pub fn run(config: &Config, input: &mut dyn BufRead, passphrase: &mut PassphraseFn) -> Result<String> {
+pub fn run(
+    config: &Config,
+    input: &mut dyn BufRead,
+    passphrase: &mut PassphraseFn,
+) -> Result<String> {
     let drifts = diff::collect(config, passphrase)?;
-    let target_drifts: Vec<_> =
-        drifts.into_iter().filter(|d| d.side == DriftSide::Target).collect();
+    let target_drifts: Vec<_> = drifts
+        .into_iter()
+        .filter(|d| d.side == DriftSide::Target)
+        .collect();
     if target_drifts.is_empty() {
         return Ok("nothing to save\n".to_string());
     }
@@ -25,7 +31,9 @@ pub fn run(config: &Config, input: &mut dyn BufRead, passphrase: &mut Passphrase
             .units
             .iter()
             .find(|u| u.target_rel == drift.rel)
-            .ok_or_else(|| Error::Rejected(format!("{}: drifted but untracked", drift.rel.display())))?;
+            .ok_or_else(|| {
+                Error::Rejected(format!("{}: drifted but untracked", drift.rel.display()))
+            })?;
         if unit.kind.is_derived() {
             let kind = match unit.kind {
                 RenderKind::Fragment => "composed from fragments",
@@ -43,7 +51,11 @@ pub fn run(config: &Config, input: &mut dyn BufRead, passphrase: &mut Passphrase
     }
 
     for drift in &target_drifts {
-        let unit = plan.units.iter().find(|u| u.target_rel == drift.rel).expect("checked above");
+        let unit = plan
+            .units
+            .iter()
+            .find(|u| u.target_rel == drift.rel)
+            .expect("checked above");
         let live = config.target_dir.join(&unit.target_rel);
         let content = fs::read(&live).at("read", &live)?;
         let dest = config.source_dir.join(&unit.source_rel);

@@ -36,7 +36,10 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
                 let declared = overlay::read_declared(&source)?;
                 let live = fsx::read_opt(&config.target_dir.join(&unit.target_rel))?;
                 if !overlay::keys_match(live.as_deref(), &declared) {
-                    drifts.push(Drift { rel: unit.target_rel.clone(), side: DriftSide::Target });
+                    drifts.push(Drift {
+                        rel: unit.target_rel.clone(),
+                        side: DriftSide::Target,
+                    });
                 }
                 continue;
             }
@@ -44,7 +47,10 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
         if fsx::read_opt(&config.target_dir.join(&unit.target_rel))?.as_deref()
             != Some(&expected[..])
         {
-            drifts.push(Drift { rel: unit.target_rel.clone(), side: DriftSide::Target });
+            drifts.push(Drift {
+                rel: unit.target_rel.clone(),
+                side: DriftSide::Target,
+            });
         }
     }
 
@@ -59,15 +65,19 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
         let live_root = config.target_dir.join(&tracked.rel);
         let live_side = fsx::walk(&live_root, &|_| true)?;
         for rel in &live_side {
-            if !source_side.iter().any(|s| *s == rel)
-                && !glob::is_ignored(rel, &tracked.ignore)
-            {
-                drifts.push(Drift { rel: tracked.rel.join(rel), side: DriftSide::New });
+            if !source_side.iter().any(|s| *s == rel) && !glob::is_ignored(rel, &tracked.ignore) {
+                drifts.push(Drift {
+                    rel: tracked.rel.join(rel),
+                    side: DriftSide::New,
+                });
             }
         }
         for rel in source_side {
             if !live_side.iter().any(|l| l == rel) {
-                drifts.push(Drift { rel: tracked.rel.join(rel), side: DriftSide::Missing });
+                drifts.push(Drift {
+                    rel: tracked.rel.join(rel),
+                    side: DriftSide::Missing,
+                });
             }
         }
     }
@@ -75,7 +85,10 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
     // Remote drift only exists where Source actually has git history to compare.
     if git::is_repo(&config.source_dir) {
         for rel in git::paths_differing_from_remote(&config.source_dir)? {
-            drifts.push(Drift { rel, side: DriftSide::Remote });
+            drifts.push(Drift {
+                rel,
+                side: DriftSide::Remote,
+            });
         }
     }
 

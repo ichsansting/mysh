@@ -30,14 +30,19 @@ pub fn ensure_installed(config: &Config, log: &AppLog) -> Result<PathBuf> {
         .env("MISE_INSTALL_PATH", &owned)
         .env("MISE_DATA_DIR", config.target_dir.join(MISE_DATA_DIR_REL))
         .status()
-        .map_err(|e| Error::Subprocess { program: "curl", detail: e.to_string() })?;
+        .map_err(|e| Error::Subprocess {
+            program: "curl",
+            detail: e.to_string(),
+        })?;
     if !status.success() || !owned.is_file() {
         return Err(Error::Subprocess {
             program: "curl",
             detail: "mise bootstrap failed".to_string(),
         });
     }
-    log.record(&LogEntry::MiseBootstrapped { path: owned.clone() })?;
+    log.record(&LogEntry::MiseBootstrapped {
+        path: owned.clone(),
+    })?;
     Ok(owned)
 }
 
@@ -49,7 +54,10 @@ pub fn install(mise_bin: &PathBuf, specifiers: &[String], config: &Config) -> Re
         .args(specifiers)
         .env("MISE_DATA_DIR", config.target_dir.join(MISE_DATA_DIR_REL))
         .output()
-        .map_err(|e| Error::Subprocess { program: "mise", detail: e.to_string() })?;
+        .map_err(|e| Error::Subprocess {
+            program: "mise",
+            detail: e.to_string(),
+        })?;
     if !output.status.success() {
         return Err(Error::Subprocess {
             program: "mise",

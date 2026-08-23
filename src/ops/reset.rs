@@ -8,7 +8,11 @@ use std::io::BufRead;
 
 /// Reset: discard all local drift — Source is forced to match Remote, then
 /// every Target is re-rendered. Remote wins. No three-way merge, ever.
-pub fn run(config: &Config, input: &mut dyn BufRead, passphrase: &mut PassphraseFn) -> Result<String> {
+pub fn run(
+    config: &Config,
+    input: &mut dyn BufRead,
+    passphrase: &mut PassphraseFn,
+) -> Result<String> {
     let drifts = diff::collect(config, passphrase)?;
     if drifts.is_empty() {
         return Ok("nothing to reset\n".to_string());

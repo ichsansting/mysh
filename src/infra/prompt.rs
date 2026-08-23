@@ -14,8 +14,11 @@ pub fn passphrase_provider(configured: Option<String>) -> impl FnMut() -> Result
         if let Some(passphrase) = &cached {
             return Ok(passphrase.clone());
         }
-        let entered = rpassword::prompt_password("mysh passphrase: ")
-            .map_err(|e| Error::Subprocess { program: "passphrase prompt", detail: e.to_string() })?;
+        let entered =
+            rpassword::prompt_password("mysh passphrase: ").map_err(|e| Error::Subprocess {
+                program: "passphrase prompt",
+                detail: e.to_string(),
+            })?;
         cached = Some(entered.clone());
         Ok(entered)
     }
@@ -30,8 +33,10 @@ pub fn new_secret_passphrase(configured: &Option<String>) -> Result<String> {
         return Ok(passphrase.clone());
     }
     let ask = |label| {
-        rpassword::prompt_password(label)
-            .map_err(|e| Error::Subprocess { program: "passphrase prompt", detail: e.to_string() })
+        rpassword::prompt_password(label).map_err(|e| Error::Subprocess {
+            program: "passphrase prompt",
+            detail: e.to_string(),
+        })
     };
     loop {
         let entered = ask("mysh passphrase: ")?;
@@ -54,10 +59,12 @@ pub fn confirm(input: &mut dyn BufRead, summary: &str) -> Result<bool> {
         detail: e.to_string(),
     })?;
     let mut answer = String::new();
-    input.read_line(&mut answer).map_err(|e| Error::Subprocess {
-        program: "stdin",
-        detail: e.to_string(),
-    })?;
+    input
+        .read_line(&mut answer)
+        .map_err(|e| Error::Subprocess {
+            program: "stdin",
+            detail: e.to_string(),
+        })?;
     println!();
     Ok(answer.trim().eq_ignore_ascii_case("y"))
 }

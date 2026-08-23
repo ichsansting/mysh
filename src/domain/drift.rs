@@ -58,8 +58,14 @@ mod tests {
     #[test]
     fn drift_lines_are_tab_separated_rel_and_side() {
         let drifts = [
-            Drift { rel: ".bashrc".into(), side: DriftSide::Target },
-            Drift { rel: ".vimrc".into(), side: DriftSide::Remote },
+            Drift {
+                rel: ".bashrc".into(),
+                side: DriftSide::Target,
+            },
+            Drift {
+                rel: ".vimrc".into(),
+                side: DriftSide::Remote,
+            },
         ];
         assert_eq!(format(&drifts), ".bashrc\ttarget\n.vimrc\tremote\n");
     }

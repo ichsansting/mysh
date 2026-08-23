@@ -9,7 +9,10 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<Output> {
         .arg(dir)
         .args(args)
         .output()
-        .map_err(|e| Error::Subprocess { program: "git", detail: e.to_string() })?;
+        .map_err(|e| Error::Subprocess {
+            program: "git",
+            detail: e.to_string(),
+        })?;
     if !output.status.success() {
         return Err(Error::Subprocess {
             program: "git",
@@ -24,7 +27,10 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<Output> {
 }
 
 fn stdout_lines(output: &Output) -> Vec<String> {
-    String::from_utf8_lossy(&output.stdout).lines().map(str::to_string).collect()
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
 }
 
 /// Whether `dir` is inside a git working tree at all. Source without git (or
@@ -48,11 +54,17 @@ pub fn paths_differing_from_remote(dir: &Path) -> Result<Vec<PathBuf>> {
     git(dir, &["fetch", "-q", "origin"])?;
     let mut paths: Vec<String> = Vec::new();
     if has_remote_main(dir) {
-        paths.extend(stdout_lines(&git(dir, &["diff", "--name-only", "origin/main"])?));
+        paths.extend(stdout_lines(&git(
+            dir,
+            &["diff", "--name-only", "origin/main"],
+        )?));
     } else {
         paths.extend(stdout_lines(&git(dir, &["ls-files"])?));
     }
-    paths.extend(stdout_lines(&git(dir, &["ls-files", "--others", "--exclude-standard"])?));
+    paths.extend(stdout_lines(&git(
+        dir,
+        &["ls-files", "--others", "--exclude-standard"],
+    )?));
     paths.sort();
     paths.dedup();
     Ok(paths.into_iter().map(PathBuf::from).collect())

@@ -118,7 +118,10 @@ pub fn enumerate(source_dir: &Path) -> Result<SourcePlan> {
             });
         }
     }
-    Ok(SourcePlan { units, tracked_dirs })
+    Ok(SourcePlan {
+        units,
+        tracked_dirs,
+    })
 }
 
 #[cfg(test)]
@@ -167,13 +170,21 @@ mod tests {
             kinds(&plan),
             vec![
                 (".bashrc".into(), ".bashrc".into(), RenderKind::Plain),
-                (".claude.json.overlay".into(), ".claude.json".into(), RenderKind::Overlay),
+                (
+                    ".claude.json.overlay".into(),
+                    ".claude.json".into(),
+                    RenderKind::Overlay
+                ),
                 (
                     ".config/fish/config.fish".into(),
                     ".config/fish/config.fish".into(),
                     RenderKind::Plain
                 ),
-                (".gitconfig.frag".into(), ".gitconfig".into(), RenderKind::Fragment),
+                (
+                    ".gitconfig.frag".into(),
+                    ".gitconfig".into(),
+                    RenderKind::Fragment
+                ),
                 (".netrc.age".into(), ".netrc".into(), RenderKind::Secret),
             ]
         );
@@ -191,7 +202,10 @@ mod tests {
 
     #[test]
     fn fragment_members_are_not_units_of_their_own() {
-        let plan = plan_of(&[(".gitconfig.frag/10-base", "a"), (".gitconfig.frag/20-token.age", "b")]);
+        let plan = plan_of(&[
+            (".gitconfig.frag/10-base", "a"),
+            (".gitconfig.frag/20-token.age", "b"),
+        ]);
         assert_eq!(plan.units.len(), 1);
         assert_eq!(plan.units[0].kind, RenderKind::Fragment);
     }
