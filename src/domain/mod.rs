@@ -1,3 +1,4 @@
+pub mod drift;
 pub mod log;
 pub mod package;
 pub mod render;

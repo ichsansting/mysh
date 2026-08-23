@@ -34,9 +34,19 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
             expect_no_args(&leftover)?;
             mysh::ops::teardown::run(&config, &mut std::io::stdin().lock())
         }
-        "diff" | "save" | "reset" | "add" => {
-            Err(Error::Rejected(format!("{command}: not implemented yet")))
+        "diff" => {
+            expect_no_args(&leftover)?;
+            mysh::ops::diff::run(&config)
         }
+        "save" => {
+            expect_no_args(&leftover)?;
+            mysh::ops::save::run(&config, &mut std::io::stdin().lock())
+        }
+        "reset" => {
+            expect_no_args(&leftover)?;
+            mysh::ops::reset::run(&config, &mut std::io::stdin().lock())
+        }
+        "add" => Err(Error::Rejected(format!("{command}: not implemented yet"))),
         _ => Err(Error::Usage(USAGE.to_string())),
     }
 }
