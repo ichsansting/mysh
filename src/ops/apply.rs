@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::domain::render::{self, RenderKind, SourcePlan};
-use crate::domain::{overlay, BACKUP_DIR_REL};
+use crate::domain::{overlay, package, BACKUP_DIR_REL};
 use crate::error::{IoCtx, Result};
 use crate::infra::prompt::PassphraseFn;
 use crate::infra::{crypto, fsx};
@@ -15,7 +15,38 @@ pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
     let plan = render::enumerate(&config.source_dir)?;
     let log = AppLog::at(&config.target_dir);
     render_plan(&plan, config, &log, passphrase)?;
+    prewarm_packages(config, &log)?;
     Ok(String::new())
+}
+
+/// The package pass: a no-op (mise never touched) when Source declares no
+/// shim at all; otherwise mise is ensured — a lazy-only device still gets it,
+/// so shims have something to invoke on first use — and every eager-marked
+/// shim's specifier is prewarmed in one batched install (ADR-0007).
+fn prewarm_packages(config: &Config, log: &AppLog) -> Result<()> {
+    let bin_dir = config.source_dir.join(crate::domain::BIN_DIR_REL);
+    let shims = fsx::walk(&bin_dir, &|_| true)?;
+    if shims.is_empty() {
+        return Ok(());
+    }
+    let mise_bin = crate::infra::mise::ensure_installed(config, log)?;
+    let mut specifiers = std::collections::BTreeSet::new();
+    for rel in &shims {
+        let path = bin_dir.join(rel);
+        // Non-UTF-8 or hand-edited content that isn't an add-written shim
+        // simply isn't prewarmable — it stays lazy, never an error (ADR-0007).
+        let Ok(content) = fs::read_to_string(&path) else { continue };
+        if package::is_eager(&content) {
+            if let Some(specifier) = package::shim_specifier(&content) {
+                specifiers.insert(specifier.to_string());
+            }
+        }
+    }
+    if !specifiers.is_empty() {
+        let specifiers: Vec<String> = specifiers.into_iter().collect();
+        crate::infra::mise::install(&mise_bin, &specifiers, config)?;
+    }
+    Ok(())
 }
 
 /// Renders a whole SourcePlan. Shared with reset (which re-applies after
