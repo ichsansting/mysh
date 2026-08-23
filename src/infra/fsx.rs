@@ -73,6 +73,15 @@ pub fn write_if_changed(path: &Path, content: &[u8], mode: Option<u32>) -> Resul
     Ok(())
 }
 
+/// A file's content, or `None` if it doesn't exist.
+pub fn read_opt(path: &Path) -> Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).at("read", path),
+    }
+}
+
 /// A file's permission bits, unix only (`None` elsewhere).
 pub fn mode_of(path: &Path) -> Result<Option<u32>> {
     #[cfg(unix)]

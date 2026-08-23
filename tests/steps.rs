@@ -22,32 +22,32 @@ fn bare_remote(w: &mut World) {
 #[given(expr = "a bare remote whose profile contains file {string} with content {string}")]
 fn bare_remote_with_profile(w: &mut World, rel: String, content: String) {
     w.init_bare_remote();
-    write_file(&w.source.join("profile").join(&rel), content.as_bytes());
+    write_file(&w.source.join("profile").join(&rel), unescape(&content).as_bytes());
     w.commit_source();
     w.push_source();
 }
 
 #[given(expr = "source file {string} with content {string}")]
 fn source_file(w: &mut World, rel: String, content: String) {
-    write_file(&w.source_path(&rel), content.as_bytes());
+    write_file(&w.source_path(&rel), unescape(&content).as_bytes());
 }
 
 #[given(expr = "source file {string} with content {string} committed and pushed")]
 fn source_file_pushed(w: &mut World, rel: String, content: String) {
-    write_file(&w.source_path(&rel), content.as_bytes());
+    write_file(&w.source_path(&rel), unescape(&content).as_bytes());
     w.commit_source();
     w.push_source();
 }
 
 #[given(expr = "source file {string} with content {string} committed but not pushed")]
 fn source_file_committed(w: &mut World, rel: String, content: String) {
-    write_file(&w.source_path(&rel), content.as_bytes());
+    write_file(&w.source_path(&rel), unescape(&content).as_bytes());
     w.commit_source();
 }
 
 #[given(expr = "source file {string} is edited to {string} and committed but not pushed")]
 fn source_file_edited_committed(w: &mut World, rel: String, content: String) {
-    write_file(&w.source_path(&rel), content.as_bytes());
+    write_file(&w.source_path(&rel), unescape(&content).as_bytes());
     w.commit_source();
 }
 
@@ -59,7 +59,7 @@ fn source_committed_and_pushed(w: &mut World) {
 
 #[given(expr = "another device pushed file {string} with content {string}")]
 fn another_device_pushed(w: &mut World, rel: String, content: String) {
-    w.push_from_another_device(&rel, &content);
+    w.push_from_another_device(&rel, &unescape(&content));
 }
 
 #[given(expr = "source directory {string} tracked with an empty {string} marker")]
@@ -88,7 +88,7 @@ fn source_secret_pushed(w: &mut World, rel: String, plaintext: String) {
 
 #[given(expr = "source fragment {string} with content {string}")]
 fn source_fragment(w: &mut World, rel: String, content: String) {
-    write_file(&w.source_path(&rel), content.as_bytes());
+    write_file(&w.source_path(&rel), unescape(&content).as_bytes());
 }
 
 #[given(expr = "source fragment secret {string} encrypting {string}")]
@@ -115,12 +115,12 @@ fn source_lazy_shim(w: &mut World, rel: String, specifier: String) {
 
 #[given(expr = "target file {string} already exists with content {string}")]
 fn target_file_pre_existing(w: &mut World, rel: String, content: String) {
-    write_file(&w.target_path(&rel), content.as_bytes());
+    write_file(&w.target_path(&rel), unescape(&content).as_bytes());
 }
 
 #[given(expr = "target file {string} is hand-edited to {string}")]
 fn target_file_hand_edited(w: &mut World, rel: String, content: String) {
-    write_file(&w.target_path(&rel), content.as_bytes());
+    write_file(&w.target_path(&rel), unescape(&content).as_bytes());
 }
 
 #[given(expr = "target file {string} is deleted")]
@@ -130,7 +130,7 @@ fn target_file_deleted(w: &mut World, rel: String) {
 
 #[given(expr = "target directory {string} exists containing file {string} with {string}")]
 fn target_dir_with_file(w: &mut World, dir: String, file: String, content: String) {
-    write_file(&w.target_path(&dir).join(&file), content.as_bytes());
+    write_file(&w.target_path(&dir).join(&file), unescape(&content).as_bytes());
 }
 
 #[given(expr = "target file {string} accumulates key {string} with value {int}")]
@@ -168,7 +168,7 @@ fn curl_downloads_mysh(w: &mut World) {
 
 #[given(expr = "an rc file with content {string}")]
 fn rc_file(w: &mut World, content: String) {
-    write_file(&w.rc_file.clone(), content.as_bytes());
+    write_file(&w.rc_file.clone(), unescape(&content).as_bytes());
 }
 
 // =========================================================================
@@ -408,7 +408,7 @@ fn batch_succeeds(w: &mut World) {
 fn target_contains(w: &mut World, rel: String, content: String) {
     let actual = fs::read_to_string(w.target_path(&rel))
         .unwrap_or_else(|e| panic!("cannot read target {rel}: {e}"));
-    assert_eq!(actual, content, "target {rel} content mismatch");
+    assert_eq!(actual, unescape(&content), "target {rel} content mismatch");
 }
 
 #[then(expr = "target {string} does not exist")]
@@ -421,7 +421,7 @@ fn target_does_not_exist(w: &mut World, rel: String) {
 fn source_contains(w: &mut World, rel: String, content: String) {
     let actual = fs::read_to_string(w.source_path(&rel))
         .unwrap_or_else(|e| panic!("cannot read source {rel}: {e}"));
-    assert_eq!(actual, content, "source {rel} content mismatch");
+    assert_eq!(actual, unescape(&content), "source {rel} content mismatch");
 }
 
 #[then(expr = "source {string} exists")]
@@ -448,7 +448,7 @@ fn rerender_yields(w: &mut World, rel: String, content: String) {
     let path = w.source_path(&format!("{rel}.age"));
     let envelope = fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     let plaintext = crypto::decrypt(&envelope, TEST_PASSPHRASE, &path).unwrap();
-    assert_eq!(String::from_utf8_lossy(&plaintext), content);
+    assert_eq!(String::from_utf8_lossy(&plaintext), unescape(&content));
 }
 
 #[then(expr = "target {string} has permissions {string}")]
@@ -573,7 +573,7 @@ fn backup_contains(w: &mut World, rel: String, content: String) {
         .and_then(|fields| fields.get(3))
         .unwrap_or_else(|| panic!("no backup recorded for {rel}: {}", w.log_text()));
     let actual = fs::read_to_string(w.target_path(backup_rel)).unwrap();
-    assert_eq!(actual, content, "backup content for {rel}");
+    assert_eq!(actual, unescape(&content), "backup content for {rel}");
 }
 
 #[then(expr = "the log has exactly one entry for {string}")]
@@ -606,7 +606,7 @@ fn summary_left_in_place(w: &mut World, rel: String) {
 #[then(expr = "the remote's latest commit contains {string} with {string}")]
 fn remote_commit_contains(w: &mut World, rel: String, content: String) {
     let actual = w.remote_file(&rel);
-    assert_eq!(String::from_utf8_lossy(&actual), content, "remote {rel}");
+    assert_eq!(String::from_utf8_lossy(&actual), unescape(&content), "remote {rel}");
 }
 
 #[then(expr = "the remote is unchanged")]
@@ -713,7 +713,7 @@ fn rc_exports_data_dir(w: &mut World, rel: String) {
 
 #[then(expr = "the rc file contains exactly {string}")]
 fn rc_contains_exactly(w: &mut World, content: String) {
-    assert_eq!(rc_text(w).trim_end(), content.trim_end(), "rc file not restored");
+    assert_eq!(rc_text(w).trim_end(), unescape(&content).trim_end(), "rc file not restored");
 }
 
 #[then(expr = "the log records the bootstrap install and the PATH addition")]
@@ -878,6 +878,13 @@ fn release_fails_with_instructions(w: &mut World) {
 // =========================================================================
 // helpers
 // =========================================================================
+
+
+/// Cucumber's {string} parameter keeps backslash escapes literally; undo the
+/// one that matters for quoted JSON content in feature files.
+fn unescape(s: &str) -> String {
+    s.replace("\\\"", "\"")
+}
 
 fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
     !needle.is_empty() && haystack.windows(needle.len()).any(|window| window == needle)

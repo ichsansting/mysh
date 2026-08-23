@@ -1,11 +1,11 @@
 use crate::config::Config;
 use crate::domain::drift::{self, Drift, DriftSide};
 use crate::domain::render::{self, RenderKind};
-use crate::error::{Error, IoCtx, Result};
+use crate::domain::overlay;
+use crate::error::{IoCtx, Result};
 use crate::infra::prompt::PassphraseFn;
-use crate::infra::{crypto, git};
+use crate::infra::{crypto, fsx, git};
 use std::fs;
-use std::path::Path;
 
 /// Diff: report drift across the three-state model — live Target vs a fresh
 /// in-memory render of Source, and Source vs Remote — without touching anything.
@@ -29,13 +29,20 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
                 crypto::decrypt(&envelope, &passphrase()?, &source)?
             }
             RenderKind::Fragment => crate::domain::fragment::compose(&source, passphrase)?,
+            // Overlay drift is key-level, not whole-content: only a declared
+            // key disagreeing (or the file missing) counts — other keys are
+            // other programs' business.
             RenderKind::Overlay => {
-                return Err(Error::Rejected(
-                    "diff: Overlay rendering not implemented yet".to_string(),
-                ));
+                let declared = overlay::read_declared(&source)?;
+                let live = fsx::read_opt(&config.target_dir.join(&unit.target_rel))?;
+                if !overlay::keys_match(live.as_deref(), &declared) {
+                    drifts.push(Drift { rel: unit.target_rel.clone(), side: DriftSide::Target });
+                }
+                continue;
             }
         };
-        if live_content(&config.target_dir.join(&unit.target_rel))?.as_deref() != Some(&expected[..])
+        if fsx::read_opt(&config.target_dir.join(&unit.target_rel))?.as_deref()
+            != Some(&expected[..])
         {
             drifts.push(Drift { rel: unit.target_rel.clone(), side: DriftSide::Target });
         }
@@ -49,12 +56,4 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
     }
 
     Ok(drifts)
-}
-
-fn live_content(path: &Path) -> Result<Option<Vec<u8>>> {
-    match fs::read(path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).at("read", path),
-    }
 }

@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::domain::render::{self, RenderKind, SourcePlan};
-use crate::domain::BACKUP_DIR_REL;
-use crate::error::{Error, IoCtx, Result};
+use crate::domain::{overlay, BACKUP_DIR_REL};
+use crate::error::{IoCtx, Result};
 use crate::infra::prompt::PassphraseFn;
 use crate::infra::{crypto, fsx};
 use std::collections::HashSet;
@@ -45,10 +45,24 @@ pub fn render_plan(
                 let content = crate::domain::fragment::compose(&source, passphrase)?;
                 write_fully_owned(config, log, &managed, &unit.target_rel, &content, None)?;
             }
+            // Overlay: enforce only the declared keys; never own, back up, or
+            // restore the rest of the file (ADR-0008 — Partial ownership).
             RenderKind::Overlay => {
-                return Err(Error::Rejected(
-                    "apply: Overlay rendering not implemented yet".to_string(),
-                ));
+                let declared = overlay::read_declared(&source)?;
+                let dest = config.target_dir.join(&unit.target_rel);
+                let live = fsx::read_opt(&dest)?;
+                if overlay::keys_match(live.as_deref(), &declared) {
+                    continue; // matching keys touch nothing and log nothing
+                }
+                let merged = overlay::merge(live.as_deref(), &declared, &dest)?;
+                if !managed.contains(&unit.target_rel) {
+                    log.record(&LogEntry::Target {
+                        ownership: Ownership::Partial,
+                        rel: unit.target_rel.clone(),
+                        backup_rel: None,
+                    })?;
+                }
+                fsx::write_if_changed(&dest, &merged, None)?;
             }
         }
     }
