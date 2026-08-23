@@ -23,7 +23,7 @@ Feature: Reset discards local drift and re-applies Remote
     And source ".bashrc" contains exactly "alias l=ls"
 
   Scenario: reset with no drift is a noop
-    And I record the state of the target tree
+    Given I record the state of the target tree
     When I run "reset"
     Then it succeeds
     And the output reports nothing to reset

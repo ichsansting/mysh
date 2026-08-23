@@ -1,7 +1,8 @@
 [package]
 name = "mysh"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2024"
+autotests = false
 
 [dependencies]
 argon2 = "0.5.3"
@@ -9,3 +10,12 @@ chacha20poly1305 = "0.11.0"
 getrandom = "0.4.3"
 rpassword = "7.5.4"
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+cucumber = "0.23"
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+
+[[test]]
+name = "bdd"
+harness = false

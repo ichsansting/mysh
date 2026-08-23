@@ -1,149 +1,106 @@
-use std::env;
+use crate::error::{Error, Result};
 use std::path::PathBuf;
 
-/// Resolved CLI configuration: injectable SOURCE_DIR/TARGET_DIR/REMOTE_URL/passphrase.
-/// Flag > env var > default, per the testing seam described in the spec.
-#[derive(Debug)]
+/// The injectable locations every command shares (the testing seam is a real,
+/// user-facing configuration surface, not scaffolding): flag > `MYSH_*` env > default.
+/// Defaults: target = `$HOME`, source = `<target>/.mysh/source/profile`.
+/// No remote flag: Remote is always Source's own git `origin`.
 pub struct Config {
     pub source_dir: PathBuf,
     pub target_dir: PathBuf,
-    pub remote_url: Option<String>,
     pub passphrase: Option<String>,
 }
 
-#[derive(Default)]
-struct Flags {
-    source_dir: Option<String>,
-    target_dir: Option<String>,
-    remote_url: Option<String>,
-    passphrase: Option<String>,
-}
-
-/// flag value, else `env_name`, else `None` — the shared flag > env precedence.
-fn resolve_var(flag: Option<String>, env_name: &str) -> Option<String> {
-    flag.or_else(|| env::var(env_name).ok())
-}
-
 impl Config {
-    /// `args` excludes the program name and subcommand (e.g. ["--source-dir", "/tmp/src"]).
-    pub fn resolve(args: &[String]) -> Result<Config, String> {
-        let flags = parse_flags(args)?;
+    /// Parses the shared flags out of `args` (`--flag value` or `--flag=value`),
+    /// returning everything unrecognized — positionals and command-specific flags —
+    /// untouched, in order, for the command to interpret with `take_flag`/`take_switch`.
+    pub fn parse(args: &[String]) -> Result<(Config, Vec<String>)> {
+        let mut leftover: Vec<String> = args.to_vec();
+        let source_dir = take_flag(&mut leftover, "--source-dir")?;
+        let target_dir = take_flag(&mut leftover, "--target-dir")?;
+        let passphrase = take_flag(&mut leftover, "--passphrase")?;
 
-        let target_dir = resolve_var(flags.target_dir, "MYSH_TARGET_DIR")
-            .or_else(|| env::var("HOME").ok())
-            .ok_or("TARGET_DIR must be set via --target-dir, MYSH_TARGET_DIR, or $HOME")?;
-        let target_dir = PathBuf::from(target_dir);
-
-        // Mirrors bootstrap.sh's own `--source-dir` handoff value (its SOURCE_DIR var
-        // is the sparse-clone root; this is that root's `profile/` subdirectory,
-        // where the actual Source content lives), so a stock bootstrap leaves every
-        // command runnable with no flags and no env vars. Note: MYSH_SOURCE_DIR means
-        // slightly different things in the two processes — bootstrap.sh's shell var
-        // of that name is the clone root, this env var is the final git-operations
-        // directory — because bootstrap.sh always derives one from the other. An
-        // override here must point at the `profile/` directory itself.
-        let source_dir = resolve_var(flags.source_dir, "MYSH_SOURCE_DIR")
+        let target_dir = target_dir
+            .or_else(|| std::env::var("MYSH_TARGET_DIR").ok())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+            .ok_or_else(|| Error::Usage("no --target-dir, MYSH_TARGET_DIR, or HOME".into()))?;
+        let source_dir = source_dir
+            .or_else(|| std::env::var("MYSH_SOURCE_DIR").ok())
             .map(PathBuf::from)
             .unwrap_or_else(|| target_dir.join(".mysh/source/profile"));
+        let passphrase = passphrase.or_else(|| std::env::var("MYSH_PASSPHRASE").ok());
 
-        let remote_url = resolve_var(flags.remote_url, "MYSH_REMOTE_URL");
-        let passphrase = resolve_var(flags.passphrase, "MYSH_PASSPHRASE");
-
-        Ok(Config {
-            source_dir,
-            target_dir,
-            remote_url,
-            passphrase,
-        })
-    }
-
-    /// Like `resolve`, but only requires `TARGET_DIR`. `teardown` never touches
-    /// `Source` (everything it needs comes from the Application Log under `Target`),
-    /// so forcing a `--source-dir` on it the way every other command needs would be a
-    /// pointless UX tax.
-    pub fn resolve_target_dir(args: &[String]) -> Result<PathBuf, String> {
-        let flags = parse_flags(args)?;
-        resolve_var(flags.target_dir, "MYSH_TARGET_DIR")
-            .or_else(|| env::var("HOME").ok())
-            .map(PathBuf::from)
-            .ok_or_else(|| "TARGET_DIR must be set via --target-dir, MYSH_TARGET_DIR, or $HOME".to_string())
+        Ok((Config { source_dir, target_dir, passphrase }, leftover))
     }
 }
 
-fn parse_flags(args: &[String]) -> Result<Flags, String> {
-    let mut flags = Flags::default();
-    let mut i = 0;
-    while i < args.len() {
-        let (name, value) = match args[i].split_once('=') {
-            Some((n, v)) => (n.to_string(), v.to_string()),
-            None => {
-                let n = args[i].clone();
-                i += 1;
-                let v = args
-                    .get(i)
-                    .ok_or_else(|| format!("{n} requires a value"))?
-                    .clone();
-                (n, v)
-            }
-        };
-        match name.as_str() {
-            "--source-dir" => flags.source_dir = Some(value),
-            "--target-dir" => flags.target_dir = Some(value),
-            "--remote-url" => flags.remote_url = Some(value),
-            "--passphrase" => flags.passphrase = Some(value),
-            other => return Err(format!("unknown flag: {other}")),
-        }
-        i += 1;
+/// Removes `--name value` / `--name=value` from `args`, returning the value.
+pub fn take_flag(args: &mut Vec<String>, name: &str) -> Result<Option<String>> {
+    let prefix = format!("{name}=");
+    let Some(i) = args.iter().position(|a| a == name || a.starts_with(&prefix)) else {
+        return Ok(None);
+    };
+    let arg = args.remove(i);
+    if let Some(value) = arg.strip_prefix(&prefix) {
+        return Ok(Some(value.to_string()));
     }
-    Ok(flags)
+    if i < args.len() {
+        return Ok(Some(args.remove(i)));
+    }
+    Err(Error::Usage(format!("{name} requires a value")))
+}
+
+/// Removes a boolean `--name` switch from `args`, returning whether it was present.
+pub fn take_switch(args: &mut Vec<String>, name: &str) -> bool {
+    let Some(i) = args.iter().position(|a| a == name) else { return false };
+    args.remove(i);
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Env vars are process-global, so every case that touches them lives in one
-    // test to avoid racing against other tests running in parallel threads.
-    #[test]
-    fn resolve_precedence_and_validation() {
-        unsafe {
-            env::remove_var("MYSH_SOURCE_DIR");
-            env::remove_var("MYSH_TARGET_DIR");
-            env::remove_var("MYSH_REMOTE_URL");
-            env::remove_var("MYSH_PASSPHRASE");
-        }
-
-        // Missing SOURCE_DIR (no flag, no env) defaults to
-        // TARGET_DIR/.mysh/source/profile, mirroring bootstrap.sh's handoff value —
-        // no hard error post-bootstrap. Regression coverage for the previous
-        // hard-fail: target_dir actually has .mysh/source/profile on disk here, the
-        // exact post-bootstrap state.
-        let target_dir = env::temp_dir().join("mysh-config-test-post-bootstrap");
-        std::fs::create_dir_all(target_dir.join(".mysh/source/profile")).unwrap();
-        let args = vec!["--target-dir".to_string(), target_dir.to_string_lossy().into_owned()];
-        let config = Config::resolve(&args).unwrap();
-        assert_eq!(config.source_dir, target_dir.join(".mysh/source/profile"));
-        std::fs::remove_dir_all(&target_dir).ok();
-
-        // Env var fills in when no flag is given.
-        unsafe { env::set_var("MYSH_SOURCE_DIR", "/from/env") };
-        let config = Config::resolve(&[]).unwrap();
-        assert_eq!(config.source_dir, PathBuf::from("/from/env"));
-
-        // Flag takes precedence over env.
-        let args = vec!["--source-dir".to_string(), "/from/flag".to_string()];
-        let config = Config::resolve(&args).unwrap();
-        assert_eq!(config.source_dir, PathBuf::from("/from/flag"));
-
-        unsafe { env::remove_var("MYSH_SOURCE_DIR") };
+    fn strs(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn resolve_target_dir_never_requires_source_dir() {
-        unsafe { env::remove_var("MYSH_TARGET_DIR") };
+    fn flags_beat_env_and_defaults_and_leftovers_pass_through() {
+        let (config, leftover) = Config::parse(&strs(&[
+            "extra",
+            "--source-dir",
+            "/s",
+            "--target-dir=/t",
+            "--passphrase",
+            "pw",
+            "--eager",
+        ]))
+        .unwrap();
+        assert_eq!(config.source_dir, PathBuf::from("/s"));
+        assert_eq!(config.target_dir, PathBuf::from("/t"));
+        assert_eq!(config.passphrase.as_deref(), Some("pw"));
+        assert_eq!(leftover, strs(&["extra", "--eager"]));
+    }
 
-        let args = vec!["--target-dir".to_string(), "/from/flag".to_string()];
-        let target_dir = Config::resolve_target_dir(&args).unwrap();
-        assert_eq!(target_dir, PathBuf::from("/from/flag"));
+    #[test]
+    fn source_defaults_under_target() {
+        let (config, _) = Config::parse(&strs(&["--target-dir", "/t"])).unwrap();
+        assert_eq!(config.source_dir, PathBuf::from("/t/.mysh/source/profile"));
+    }
+
+    #[test]
+    fn a_flag_missing_its_value_is_a_usage_error() {
+        assert!(Config::parse(&strs(&["--target-dir"])).is_err());
+    }
+
+    #[test]
+    fn take_switch_removes_only_the_switch() {
+        let mut args = strs(&["a", "--eager", "b"]);
+        assert!(take_switch(&mut args, "--eager"));
+        assert!(!take_switch(&mut args, "--eager"));
+        assert_eq!(args, strs(&["a", "b"]));
     }
 }

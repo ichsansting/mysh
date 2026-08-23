@@ -30,7 +30,8 @@ Feature: One-line bootstrap sets up a brand-new device
 
   Scenario: bootstrap exports MISE_DATA_DIR durably in the rc file
     When I bootstrap the device
-    Then the rc file exports MISE_DATA_DIR pointing at ".mysh/mise"
+    Then it succeeds
+    And the rc file exports MISE_DATA_DIR pointing at ".mysh/mise"
 
   Scenario: every documented command succeeds post-bootstrap with no flags or env
     Given I bootstrapped the device

@@ -29,7 +29,8 @@ Feature: Overlays enforce declared keys onto a Target mysh does not own
     Given target file ".claude.json" already exists with content "{\"numStartups\": 42, \"hasCompletedOnboarding\": true}"
     And source overlay ".claude.json.overlay" declaring {"hasCompletedOnboarding": true}
     When I run "diff"
-    Then the output does not mention ".claude.json"
+    Then it succeeds
+    And the output does not mention ".claude.json"
 
   Scenario: diff shows drift when a target value disagrees with the declared one
     Given target file ".claude.json" already exists with content "{\"hasCompletedOnboarding\": false}"
@@ -62,4 +63,5 @@ Feature: Overlays enforce declared keys onto a Target mysh does not own
   Scenario: the overlay file itself is never copied verbatim into target
     Given source overlay ".claude.json.overlay" declaring {"hasCompletedOnboarding": true}
     When I run "apply"
-    Then target ".claude.json.overlay" does not exist
+    Then it succeeds
+    And target ".claude.json.overlay" does not exist

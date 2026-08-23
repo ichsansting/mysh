@@ -24,7 +24,7 @@ Feature: Save captures live Target edits back into Source
     And the remote is unchanged
 
   Scenario: save with no target drift is a noop
-    And I record the state of the remote
+    Given I record the state of the remote
     When I run "save"
     Then it succeeds
     And the output reports nothing to save
