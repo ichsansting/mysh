@@ -47,7 +47,7 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
             expect_no_args(&leftover)?;
             mysh::ops::reset::run(&config, &mut std::io::stdin().lock(), &mut passphrase)
         }
-        "add" => Err(Error::Rejected(format!("{command}: not implemented yet"))),
+        "add" => mysh::ops::add::run(&config, leftover, &mut std::io::stdin().lock()),
         _ => Err(Error::Usage(USAGE.to_string())),
     }
 }

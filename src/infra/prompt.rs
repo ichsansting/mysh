@@ -21,6 +21,27 @@ pub fn passphrase_provider(configured: Option<String>) -> impl FnMut() -> Result
     }
 }
 
+/// The passphrase for a *new* Secret (`add --secret`): a configured passphrase
+/// is used as-is (it wasn't typed blind); otherwise prompt twice and loop until
+/// both entries match, so a typo at creation is caught immediately instead of
+/// surfacing later as an undecryptable file.
+pub fn new_secret_passphrase(configured: &Option<String>) -> Result<String> {
+    if let Some(passphrase) = configured {
+        return Ok(passphrase.clone());
+    }
+    let ask = |label| {
+        rpassword::prompt_password(label)
+            .map_err(|e| Error::Subprocess { program: "passphrase prompt", detail: e.to_string() })
+    };
+    loop {
+        let entered = ask("mysh passphrase: ")?;
+        if entered == ask("confirm passphrase: ")? {
+            return Ok(entered);
+        }
+        eprintln!("passphrases didn't match, try again");
+    }
+}
+
 /// Shows the pending-state summary, asks for explicit confirmation, and reads the
 /// answer from `input` (injected so tests pipe "y\n"/"n\n"). Anything but an
 /// explicit yes declines — the destructive path must be opt-in, never default.
