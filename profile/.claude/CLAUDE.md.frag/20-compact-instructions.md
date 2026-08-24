@@ -1,4 +1,4 @@
-## Compact Instructions
+# Compact Instructions
 
 When compacting, preserve working state for continuation, not chat history.
 
@@ -22,3 +22,4 @@ Drop:
 - Abandoned ideas that are no longer relevant
 
 After compaction, re-read PLAN.md or HANDOFF.md if present before continuing.
+

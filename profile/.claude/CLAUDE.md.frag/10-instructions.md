@@ -19,3 +19,4 @@
 - When editing files, favor explicit content-hash anchors over retyping large blocks of unchanged code.
 - Run local validation checks (e.g., `npm run check`, `pytest`, `cargo test`) immediately after code changes to ensure nothing is broken.
 - Before committing, launch a sub agent to run the caveman-commit skill and use its message verbatim, no edits, no appends.
+
