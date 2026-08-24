@@ -1,4 +1,5 @@
 attach_to_session true
+default_mode "locked"
 default_shell "fish"
 mouse_mode true
 on_force_close "detach"
