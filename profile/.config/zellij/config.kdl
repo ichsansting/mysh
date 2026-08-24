@@ -1,5 +1,11 @@
+attach_to_session true
 default_shell "fish"
 mouse_mode true
+on_force_close "detach"
+scrollback_lines_to_serialize 0
+session_name "main"
+session_serialization true
+pane_viewport_serialization true
 theme "catppuccin-mocha"
 
 keybinds {
