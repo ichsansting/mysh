@@ -976,10 +976,14 @@ fn release_checkout(w: &mut World) -> std::path::PathBuf {
 fn write_release_stubs(w: &World, cargo_zigbuild_works: bool) {
     let gh_calls = w.stub.join("gh.calls");
     let released = w.stub.join("gh-released");
-    // release.sh's `eval "$(mise activate bash)"` / `mise shell ...` just need to
-    // not fail here — the actual tools they'd put on PATH are these same stubs,
-    // already there directly, so the stub mise has nothing real to activate.
-    write_executable(&w.stub.join("mise"), b"#!/bin/sh\nexit 0\n");
+    // release.sh's `mise exec <tools> -- "$0" "$@"` needs to actually run the
+    // wrapped command (the script re-invoking itself) for the rest of the run
+    // to happen at all — the tools it'd install are these same stubs, already
+    // on PATH directly, so the stub only has to thread the command through.
+    write_executable(
+        &w.stub.join("mise"),
+        b"#!/bin/sh\nif [ \"$1\" = \"exec\" ]; then\n  shift\n  while [ \"$#\" -gt 0 ] && [ \"$1\" != \"--\" ]; do shift; done\n  shift\n  exec \"$@\"\nfi\nexit 0\n",
+    );
     write_executable(
         &w.stub.join("rustup"),
         b"#!/bin/sh\nif [ \"$1 $2\" = \"target list\" ]; then\n  echo x86_64-unknown-linux-musl\n  echo aarch64-unknown-linux-musl\n  echo aarch64-apple-darwin\nfi\nexit 0\n",

@@ -1,4 +1,4 @@
-use crate::domain::picker::{self, Item, Key, Outcome, State};
+use crate::domain::picker::Item;
 
 /// Result of trying to run the interactive picker.
 pub enum PickResult {
@@ -33,7 +33,8 @@ pub fn pick(items: Vec<Item>) -> PickResult {
 /// risks corrupting a real user's terminal state rather than just failing a test.
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::{Item, Key, Outcome, PickResult, State, picker};
+    use super::{Item, PickResult};
+    use crate::domain::picker::{self, Key, Outcome, State};
     use std::io::{self, Read, Write};
 
     const STDIN_FILENO: i32 = 0;

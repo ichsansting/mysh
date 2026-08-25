@@ -20,13 +20,20 @@ fi
 
 # --- Provision the cross-build toolchain via mise instead of checking for it and
 # refusing: mise is assumed present (every device mysh manages already bootstraps
-# it — ADR-0005/0007), so there's no manual-install step left to document. `mise
-# shell` only works once `mise activate` has installed its shell function for this
-# session (that's what the eval does); everything after is on PATH for the rest of
-# this script. rustup itself comes from mise's `rust` tool — `target add` is still
-# a separate, idempotent step mise has no first-class equivalent for. ---
-eval "$(mise activate bash)"
-mise shell rust@latest zig@latest cargo:cargo-zigbuild@latest
+# it — ADR-0005/0007), so there's no manual-install step left to document.
+# `mise shell` is NOT this: it only sets MISE_<TOOL>_VERSION env vars that
+# `mise activate`'s interactive-prompt hook turns into a PATH update before your
+# next typed command — a plain script has no prompt hook, so those vars would sit
+# there doing nothing. `mise exec` is mise's actual non-interactive mechanism:
+# it wraps one command with the requested tools genuinely on PATH, installing
+# whatever's missing first. So this re-execs the script itself, once, under it —
+# everything after this guard runs the second time through, tools in hand.
+# rustup itself comes from mise's `rust` tool; `target add` is still a separate,
+# idempotent step mise has no first-class equivalent for. ---
+if [ -z "${MYSH_RELEASE_TOOLCHAIN_READY:-}" ]; then
+    export MYSH_RELEASE_TOOLCHAIN_READY=1
+    exec mise exec rust@latest zig@latest cargo:cargo-zigbuild@latest -- "$0" "$@"
+fi
 
 for target in "${TARGETS[@]}"; do
     rustup target add "$target"
