@@ -1,4 +1,6 @@
+use crate::domain::drift::DriftSide;
 use crate::error::{Error, Result};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -33,51 +35,95 @@ fn stdout_lines(output: &Output) -> Vec<String> {
         .collect()
 }
 
+/// Whether `git -C dir rev-parse <args>` succeeds — the shared shape behind
+/// every "does this ref/repo exist" check below (`is_repo`, `has_remote_main`,
+/// `has_head`), which all treat a spawn failure the same way any of these
+/// checks fails cheaply: not an error, just "no."
+fn rev_parse_ok(dir: &Path, args: &[&str]) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .arg("rev-parse")
+        .args(args)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Whether `dir` is inside a git working tree at all. Source without git (or
 /// without a Remote) still supports apply/diff-vs-target — Remote drift is
 /// simply not reported.
 pub fn is_repo(dir: &Path) -> bool {
-    Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["rev-parse", "--git-dir"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    rev_parse_ok(dir, &["--git-dir"])
 }
 
-/// Every Source path that differs from Remote's tip: fetches origin, then the
-/// union of tracked differences vs `origin/main` (uncommitted, committed-but-
-/// unpushed, and remote-only files) and untracked files. On a Remote with no
-/// commits yet, everything unpushed is drift.
-pub fn paths_differing_from_remote(dir: &Path) -> Result<Vec<PathBuf>> {
-    git(dir, &["fetch", "-q", "origin"])?;
-    let mut paths: Vec<String> = Vec::new();
-    if has_remote_main(dir) {
-        paths.extend(stdout_lines(&git(
-            dir,
-            &["diff", "--name-only", "origin/main"],
-        )?));
-    } else {
-        paths.extend(stdout_lines(&git(dir, &["ls-files"])?));
+/// Every Source path that differs from Remote's tip, and which direction:
+/// changed locally since the last common point (`Ahead`, a save candidate),
+/// changed on Remote (`Behind`, a reset candidate), or both (`Diverged` — no
+/// three-way merge, so this is never auto-resolved either direction).
+/// `fetch` controls whether Remote's tip is refreshed first: full `diff`
+/// fetches for an accurate answer; `diff --quick` skips it (no network in the
+/// prompt path), comparing against `origin/main` exactly as last fetched —
+/// same staleness contract `git_status` prompts already have. On a Remote
+/// with no commits yet, everything tracked is Ahead.
+pub fn paths_differing_from_remote(dir: &Path, fetch: bool) -> Result<Vec<(PathBuf, DriftSide)>> {
+    if fetch {
+        git(dir, &["fetch", "-q", "origin"])?;
     }
-    paths.extend(stdout_lines(&git(
-        dir,
-        &["ls-files", "--others", "--exclude-standard"],
-    )?));
-    paths.sort();
-    paths.dedup();
-    Ok(paths.into_iter().map(PathBuf::from).collect())
+    let mut result: Vec<(PathBuf, DriftSide)> = Vec::new();
+    if has_remote_main(dir) {
+        // A device that has never committed locally (its very first `diff`,
+        // before ever running `save`/`add`) has no HEAD for `git diff`/`merge-base`
+        // to resolve — nothing local can be Ahead by commit history, so every
+        // path Remote has is simply Behind (this device's first Reset candidate).
+        let (local, remote): (HashSet<String>, HashSet<String>) = if has_head(dir) {
+            let base = merge_base_with_remote(dir)?;
+            let local = stdout_lines(&git(dir, &["diff", "--name-only", &base, "HEAD"])?)
+                .into_iter()
+                .chain(stdout_lines(&git(dir, &["diff", "--name-only", "HEAD"])?))
+                .collect();
+            let remote = stdout_lines(&git(dir, &["diff", "--name-only", &base, "origin/main"])?)
+                .into_iter()
+                .collect();
+            (local, remote)
+        } else {
+            let remote = stdout_lines(&git(dir, &["ls-tree", "-r", "--name-only", "origin/main"])?)
+                .into_iter()
+                .collect();
+            (HashSet::new(), remote)
+        };
+        for path in local.union(&remote) {
+            let side = match (local.contains(path), remote.contains(path)) {
+                (true, true) => DriftSide::Diverged,
+                (true, false) => DriftSide::Ahead,
+                (false, true) => DriftSide::Behind,
+                (false, false) => unreachable!("path came from the union of these two sets"),
+            };
+            result.push((PathBuf::from(path), side));
+        }
+    } else {
+        for path in stdout_lines(&git(dir, &["ls-files"])?) {
+            result.push((PathBuf::from(path), DriftSide::Ahead));
+        }
+    }
+    for path in stdout_lines(&git(dir, &["ls-files", "--others", "--exclude-standard"])?) {
+        result.push((PathBuf::from(path), DriftSide::Ahead));
+    }
+    result.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(result)
+}
+
+fn has_head(dir: &Path) -> bool {
+    rev_parse_ok(dir, &["--verify", "-q", "HEAD"])
+}
+
+fn merge_base_with_remote(dir: &Path) -> Result<String> {
+    let output = git(dir, &["merge-base", "HEAD", "origin/main"])?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 pub(crate) fn has_remote_main(dir: &Path) -> bool {
-    Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["rev-parse", "--verify", "-q", "origin/main"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    rev_parse_ok(dir, &["--verify", "-q", "origin/main"])
 }
 
 /// Stages, commits, and pushes exactly `paths` (Source-relative) to origin —

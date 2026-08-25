@@ -38,3 +38,24 @@ Feature: Secrets are encrypted in Source, plaintext only in Target
     When I run "reset" answering "y"
     Then it succeeds
     And target ".netrc" contains exactly "machine x login y"
+
+  Scenario: diff --quick reports a secret clean right after apply
+    Given source secret ".netrc.age" encrypting "machine x login y" committed and pushed
+    And I ran "apply"
+    When I run "diff --quick"
+    Then the output reports no drift
+
+  Scenario: diff --quick detects a hand-edited secret via its cached fingerprint
+    Given source secret ".netrc.age" encrypting "machine x login y" committed and pushed
+    And I ran "apply"
+    And target file ".netrc" is hand-edited to "machine x login z"
+    When I run "diff --quick"
+    Then the output reports target drift for ".netrc"
+
+  Scenario: diff --quick reports clean again once save re-establishes the fingerprint
+    Given source secret ".netrc.age" encrypting "machine x login y" committed and pushed
+    And I ran "apply"
+    And target file ".netrc" is hand-edited to "machine x login z"
+    And I ran "save" answering "y"
+    When I run "diff --quick"
+    Then the output reports no drift

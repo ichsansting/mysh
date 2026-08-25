@@ -46,3 +46,12 @@ Feature: Save captures live Target edits back into Source
     When I run "save" answering "y"
     Then it succeeds
     And the remote's latest commit contains ".netrc.age"
+
+  Scenario: save with no target drift leaves the fingerprint cache untouched
+    Given source secret ".netrc.age" encrypting "machine x login y" committed and pushed
+    And I ran "apply"
+    And I record the state of the target tree
+    When I run "save"
+    Then it succeeds
+    And the output reports nothing to save
+    And no file under the target changed

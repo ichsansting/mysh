@@ -1,6 +1,8 @@
 Feature: Reset discards local drift and re-applies Remote
   Remote wins. Reset shows the pending drift, requires explicit confirmation,
-  then forces Source to match Remote and re-renders every Target.
+  then forces Source to match Remote and re-renders every Target. Refuses
+  outright on a diverged path instead — mysh does no three-way merge, so it
+  will not silently pick a side there either.
 
   Background:
     Given a bare remote
@@ -28,3 +30,10 @@ Feature: Reset discards local drift and re-applies Remote
     Then it succeeds
     And the output reports nothing to reset
     And no file under the target changed
+
+  Scenario: reset refuses a diverged path rather than picking a side
+    Given source file ".bashrc" is edited to "alias l=ls -la" and committed but not pushed
+    And another device pushed file ".bashrc" with content "alias l=ls --color"
+    When I run "reset" answering "y"
+    Then it fails mentioning "diverged"
+    And source ".bashrc" contains exactly "alias l=ls -la"

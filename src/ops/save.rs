@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::domain::drift::{self, DriftSide};
+use crate::domain::fingerprint::Fingerprints;
 use crate::domain::picker::Item;
 use crate::domain::render::{self, RenderKind};
 use crate::error::{Error, IoCtx, Result};
@@ -14,15 +15,19 @@ use std::fs;
 /// nothing on the Target side has drifted at all. Local wins. Refused for
 /// derived Targets (Fragment/Overlay) — there is no unambiguous Source piece
 /// to attribute a hand-edit to. `Missing` drift is never offered here — that's
-/// a Reset candidate, not Save's job.
+/// a Reset candidate, not Save's job. Nor is `Behind`/`Diverged` — pushing
+/// over content Remote has that Source doesn't isn't what "local wins" means;
+/// only `Ahead` (Source already correct, just unpushed) is actionable here.
+/// Always collects with `quick: false` — Save is about to actually commit and
+/// push, so it needs the accurate answer, not the prompt's fast approximation.
 pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
-    let drifts = diff::collect(config, passphrase)?;
+    let drifts = diff::collect(config, passphrase, false)?;
     let actionable: Vec<_> = drifts
         .into_iter()
         .filter(|d| {
             matches!(
                 d.side,
-                DriftSide::Target | DriftSide::New | DriftSide::Remote
+                DriftSide::Target | DriftSide::New | DriftSide::Ahead
             )
         })
         .collect();
@@ -73,6 +78,7 @@ pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
         return Ok("nothing to save\n".to_string());
     }
 
+    let mut fingerprints = Fingerprints::at(&config.target_dir)?;
     let mut git_paths = Vec::new();
     for item in &selected {
         match item.side {
@@ -92,12 +98,18 @@ pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
                 let dest = config.source_dir.join(&unit.source_rel);
                 match unit.kind {
                     RenderKind::Plain => {
-                        fs::write(&dest, content).at("write", &dest)?;
+                        fs::write(&dest, &content).at("write", &dest)?;
                     }
                     // Captured edits go back encrypted — plaintext never lands in Source.
+                    // Target didn't change, only Source caught up to it — so this
+                    // capture point re-establishes agreement, same as Apply does the
+                    // other direction. Keeps `diff --quick` accurate afterward. Plain
+                    // needs no Fingerprint: its quick-diff reads Source directly, same
+                    // as full diff, no decryption ever involved either way.
                     RenderKind::Secret => {
                         let envelope = crypto::encrypt(&content, &passphrase()?, &dest)?;
                         fs::write(&dest, envelope).at("write", &dest)?;
+                        fingerprints.set(unit.target_rel.clone(), &content);
                     }
                     RenderKind::Fragment | RenderKind::Overlay => unreachable!("rejected above"),
                 }
@@ -114,10 +126,13 @@ pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
             }
             // Already correct in Source (e.g. staged there by `add`) — nothing
             // to capture, it just needs pushing.
-            DriftSide::Remote => git_paths.push(item.rel.clone()),
-            DriftSide::Missing => unreachable!("not actionable, never offered"),
+            DriftSide::Ahead => git_paths.push(item.rel.clone()),
+            DriftSide::Behind | DriftSide::Diverged | DriftSide::Missing => {
+                unreachable!("not actionable, never offered")
+            }
         }
     }
+    fingerprints.save()?;
 
     git::commit_and_push(&config.source_dir, "mysh save", &git_paths)?;
     Ok("saved\n".to_string())

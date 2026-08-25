@@ -361,11 +361,29 @@ fn output_target_drift(w: &mut World, rel: String) {
     );
 }
 
-#[then(expr = "the output reports remote drift for {string}")]
-fn output_remote_drift(w: &mut World, rel: String) {
+#[then(expr = "the output reports drift ahead of remote for {string}")]
+fn output_ahead_drift(w: &mut World, rel: String) {
     assert!(
-        has_line(w, &format!("{rel}\tremote")),
-        "no remote drift line for {rel}: {}",
+        has_line(w, &format!("{rel}\tahead")),
+        "no ahead drift line for {rel}: {}",
+        w.stdout()
+    );
+}
+
+#[then(expr = "the output reports drift behind remote for {string}")]
+fn output_behind_drift(w: &mut World, rel: String) {
+    assert!(
+        has_line(w, &format!("{rel}\tbehind")),
+        "no behind drift line for {rel}: {}",
+        w.stdout()
+    );
+}
+
+#[then(expr = "the output reports diverged drift for {string}")]
+fn output_diverged_drift(w: &mut World, rel: String) {
+    assert!(
+        has_line(w, &format!("{rel}\tdiverged")),
+        "no diverged drift line for {rel}: {}",
         w.stdout()
     );
 }
@@ -382,7 +400,9 @@ fn output_no_target_drift(w: &mut World) {
 #[then(expr = "the output reports no remote drift")]
 fn output_no_remote_drift(w: &mut World) {
     assert!(
-        !w.stdout().lines().any(|l| l.ends_with("\tremote")),
+        !w.stdout().lines().any(|l| {
+            l.ends_with("\tahead") || l.ends_with("\tbehind") || l.ends_with("\tdiverged")
+        }),
         "unexpected remote drift: {}",
         w.stdout()
     );

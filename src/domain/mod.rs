@@ -1,4 +1,5 @@
 pub mod drift;
+pub mod fingerprint;
 pub mod fragment;
 pub mod glob;
 pub mod log;
@@ -17,3 +18,5 @@ pub const MISE_DATA_DIR_REL: &str = ".mysh/mise";
 pub const LOG_REL: &str = ".mysh/log";
 /// Backups of pre-existing files overwritten on first apply.
 pub const BACKUP_DIR_REL: &str = ".mysh/backups";
+/// The Fingerprint cache — disposable, unlike the Application Log.
+pub const FINGERPRINTS_REL: &str = ".mysh/fingerprints";

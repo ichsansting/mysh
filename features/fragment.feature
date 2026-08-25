@@ -46,3 +46,20 @@ Feature: Fragments compose one Target file from pieces
     And target file ".gitconfig" is hand-edited to "[user][extra]"
     When I run "reset" answering "y"
     Then target ".gitconfig" contains exactly "[user]"
+
+  Scenario: diff --quick reports a fragment with a secret member clean right after apply
+    Given source fragment ".gitconfig.frag/10-base" with content "[user]"
+    And source fragment secret ".gitconfig.frag/20-token.age" encrypting "token = t"
+    And the source is committed and pushed
+    And I ran "apply"
+    When I run "diff --quick"
+    Then the output reports no drift
+
+  Scenario: diff --quick detects a hand-edited fragment via its cached fingerprint
+    Given source fragment ".gitconfig.frag/10-base" with content "[user]"
+    And source fragment secret ".gitconfig.frag/20-token.age" encrypting "token = t"
+    And the source is committed and pushed
+    And I ran "apply"
+    And target file ".gitconfig" is hand-edited to "[user][extra]"
+    When I run "diff --quick"
+    Then the output reports target drift for ".gitconfig"

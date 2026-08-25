@@ -1,9 +1,9 @@
-use mysh::config::Config;
+use mysh::config::{Config, take_switch};
 use mysh::error::{Error, Result};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: mysh <apply|diff|save|reset|add|teardown> \
-[--source-dir <dir>] [--target-dir <dir>] [--passphrase <p>]";
+[--source-dir <dir>] [--target-dir <dir>] [--passphrase <p>] [--quick]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -24,7 +24,7 @@ fn main() -> ExitCode {
 }
 
 fn dispatch(command: &str, rest: &[String]) -> Result<String> {
-    let (config, leftover) = Config::parse(rest)?;
+    let (config, mut leftover) = Config::parse(rest)?;
     let mut passphrase = mysh::infra::prompt::passphrase_provider(config.passphrase.clone());
     match command {
         "apply" => {
@@ -36,8 +36,9 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
             mysh::ops::teardown::run(&config, &mut std::io::stdin().lock())
         }
         "diff" => {
+            let quick = take_switch(&mut leftover, "--quick");
             expect_no_args(&leftover)?;
-            mysh::ops::diff::run(&config, &mut passphrase)
+            mysh::ops::diff::run(&config, &mut passphrase, quick)
         }
         "save" => {
             expect_no_args(&leftover)?;

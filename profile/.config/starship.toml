@@ -1,4 +1,4 @@
-format = "$username$hostname$directory$git_branch$git_status$rust$python$nodejs$cmd_duration$line_break$character"
+format = "$username$hostname$directory$git_branch$git_status${custom.mysh}$rust$python$nodejs$cmd_duration$line_break$character"
 palette = "catppuccin_mocha"
 
 [character]
@@ -8,6 +8,21 @@ success_symbol = "[❯](bold green)"
 [cmd_duration]
 min_time = 2000
 style = "bold yellow"
+
+# One glyph for `mysh diff --quick`'s drift: ⇡ save-needed (Target drift or
+# ahead of remote), ⇣ pull-needed (behind remote), ⇕ diverged. Empty output on
+# clean, so starship hides the module entirely — same as $git_status.
+[custom.mysh]
+command = '''mysh diff --quick 2>/dev/null | awk -F'\t' '
+$2 == "diverged" { d=1 }
+$2 == "target" || $2 == "ahead" { s=1 }
+$2 == "behind" { p=1 }
+END { if (d) printf "⇕"; else if (s) printf "⇡"; else if (p) printf "⇣" }
+'
+'''
+shell = ["sh"]
+when = true
+style = "bold red"
 
 [directory]
 style = "bold lavender"

@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::domain::drift::{self, Drift, DriftSide};
+use crate::domain::fingerprint::{self, Fingerprints};
 use crate::domain::picker::Item;
 use crate::domain::render::{self, RenderKind, SourcePlan};
 use crate::domain::{fragment, glob, overlay};
@@ -15,8 +16,16 @@ use std::path::Path;
 /// specific paths to see the actual content difference behind their drift
 /// instead of just that it exists. Piped stdin (scripts, tests, CI) has no
 /// picker to offer, so it falls back to the plain list, unchanged.
-pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
-    let drifts = collect(config, passphrase)?;
+///
+/// `quick` (`diff --quick`) trades accuracy for speed: no `git fetch` (Remote
+/// drift is judged against `origin/main` as last fetched), and no decrypting
+/// Secrets or composing Fragments (their Target drift is judged against the
+/// Fingerprint cache instead of freshly-rendered content). Cheap and safe
+/// enough to run on every shell prompt render — see ADR-0012. Save and Reset
+/// always call `collect` with `quick: false`; only the read-only `diff`
+/// command exposes the flag.
+pub fn run(config: &Config, passphrase: &mut PassphraseFn, quick: bool) -> Result<String> {
+    let drifts = collect(config, passphrase, quick)?;
     if drifts.is_empty() {
         return Ok(drift::format(&drifts));
     }
@@ -51,7 +60,9 @@ fn content_diff(
     passphrase: &mut PassphraseFn,
 ) -> Result<String> {
     match item.side {
-        DriftSide::Remote => git::diff_source_vs_remote(&config.source_dir, &item.rel),
+        DriftSide::Ahead | DriftSide::Behind | DriftSide::Diverged => {
+            git::diff_source_vs_remote(&config.source_dir, &item.rel)
+        }
         DriftSide::Target => target_content_diff(config, plan, &item.rel, passphrase),
         DriftSide::New | DriftSide::Missing => {
             Ok(format!("{}\t{}\n", item.rel.display(), item.side))
@@ -133,13 +144,57 @@ fn with_temp_file<T>(
     result
 }
 
-/// The shared drift collection save/reset confirm against.
-pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Drift>> {
+/// The shared drift collection save/reset confirm against. `quick` skips
+/// decryption/composition for Secret/Fragment units (compared against their
+/// cached Fingerprint instead) and skips `git fetch` for Remote drift — see
+/// `run`'s doc comment and ADR-0012.
+pub fn collect(config: &Config, passphrase: &mut PassphraseFn, quick: bool) -> Result<Vec<Drift>> {
     let plan = render::enumerate(&config.source_dir)?;
     let mut drifts = Vec::new();
+    // Only ever consulted on the quick path (below) — full diff decrypts/composes
+    // directly and never looks at this, so there's no reason to read it there.
+    let fingerprints = quick
+        .then(|| Fingerprints::at(&config.target_dir))
+        .transpose()?;
 
     for unit in &plan.units {
         let source = config.source_dir.join(&unit.source_rel);
+        let target = config.target_dir.join(&unit.target_rel);
+        match unit.kind {
+            RenderKind::Overlay => {
+                // Overlay drift is key-level, not whole-content: only a declared
+                // key disagreeing (or the file missing) counts — other keys are
+                // other programs' business. Never needs decryption either way.
+                let declared = overlay::read_declared(&source)?;
+                let live = fsx::read_opt(&target)?;
+                if !overlay::keys_match(live.as_deref(), &declared) {
+                    drifts.push(Drift {
+                        rel: unit.target_rel.clone(),
+                        side: DriftSide::Target,
+                    });
+                }
+                continue;
+            }
+            RenderKind::Secret | RenderKind::Fragment if quick => {
+                // No fingerprint recorded yet (e.g. before this unit's first
+                // Apply/Save on this device) is unknown, not drifted — nothing
+                // to compare against, so it's silently skipped rather than
+                // guessed at. A full `diff` (or `apply`) settles it for good.
+                let known_quick = fingerprints.as_ref().expect("Some when quick");
+                let Some(expected_hash) = known_quick.get(&unit.target_rel) else {
+                    continue;
+                };
+                let live = fsx::read_opt(&target)?;
+                if live.as_deref().map(fingerprint::hash_of) != Some(expected_hash) {
+                    drifts.push(Drift {
+                        rel: unit.target_rel.clone(),
+                        side: DriftSide::Target,
+                    });
+                }
+                continue;
+            }
+            _ => {}
+        }
         let expected = match unit.kind {
             RenderKind::Plain => fs::read(&source).at("read", &source)?,
             // Always plaintext-to-plaintext: a fresh decrypt of Source against
@@ -149,24 +204,9 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
                 crypto::decrypt(&envelope, &passphrase()?, &source)?
             }
             RenderKind::Fragment => crate::domain::fragment::compose(&source, passphrase)?,
-            // Overlay drift is key-level, not whole-content: only a declared
-            // key disagreeing (or the file missing) counts — other keys are
-            // other programs' business.
-            RenderKind::Overlay => {
-                let declared = overlay::read_declared(&source)?;
-                let live = fsx::read_opt(&config.target_dir.join(&unit.target_rel))?;
-                if !overlay::keys_match(live.as_deref(), &declared) {
-                    drifts.push(Drift {
-                        rel: unit.target_rel.clone(),
-                        side: DriftSide::Target,
-                    });
-                }
-                continue;
-            }
+            RenderKind::Overlay => unreachable!("handled and `continue`d above"),
         };
-        if fsx::read_opt(&config.target_dir.join(&unit.target_rel))?.as_deref()
-            != Some(&expected[..])
-        {
+        if fsx::read_opt(&target)?.as_deref() != Some(&expected[..]) {
             drifts.push(Drift {
                 rel: unit.target_rel.clone(),
                 side: DriftSide::Target,
@@ -204,11 +244,8 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn) -> Result<Vec<Dri
 
     // Remote drift only exists where Source actually has git history to compare.
     if git::is_repo(&config.source_dir) {
-        for rel in git::paths_differing_from_remote(&config.source_dir)? {
-            drifts.push(Drift {
-                rel,
-                side: DriftSide::Remote,
-            });
+        for (rel, side) in git::paths_differing_from_remote(&config.source_dir, !quick)? {
+            drifts.push(Drift { rel, side });
         }
     }
 

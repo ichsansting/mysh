@@ -34,15 +34,19 @@ _Avoid_: patch, sync
 The single, shared secret used to derive the encryption key for every Secret, on every device. Prompted fresh on any command that needs to decrypt something; never cached or stored.
 
 **Diff**:
-Reports drift across the three-state model — Target vs a fresh render of Source, and Source vs Remote — as a list of paths and which side changed, without touching anything. Any listed path can be inspected further for the actual content difference behind the drift, not just that it exists — decrypted plaintext for a Secret, never ciphertext.
+Reports drift across the three-state model — Target vs a fresh render of Source, and Source vs Remote — as a list of paths and which side changed, without touching anything. Remote drift is reported per path as Ahead, Behind, or Diverged rather than one flat side: Ahead means Source has content Remote doesn't (a Save candidate), Behind means Remote has content Source doesn't (a Reset candidate), and Diverged means both sides changed the same path since they last agreed (mysh does no three-way merge, so this is never auto-resolved either direction). Any listed path can be inspected further for the actual content difference behind the drift, not just that it exists — decrypted plaintext for a Secret, never ciphertext. A `--quick` mode trades accuracy for speed — no network call, and Secret/Fragment drift judged against a cached Fingerprint instead of freshly decrypted/composed content — cheap enough to run on every shell-prompt render; see ADR-0012.
 _Avoid_: status
+
+**Fingerprint**:
+A per-device, per-unit content hash recorded at Apply and Save — the two moments Source and Target are known to agree — kept in its own disposable cache file, separate from the Application Log. Lets Diff's `--quick` mode judge a Secret or Fragment unit's Target drift by comparing a hash instead of decrypting or composing it. Losing this cache costs nothing but a stale/unknown quick-Diff reading until the next Apply or Save; unlike the Application Log, Teardown never depends on it.
+_Avoid_: hash, checksum, cache — each names only the mechanism, not what it's for.
 
 **Save**:
 The operation that captures live edits in Target back into Source and pushes Source's current state to Remote — including anything already sitting in Source unpushed (e.g. from Add) even where Target itself hasn't drifted. Local wins. Shows a diff and requires explicit confirmation before it runs, narrowable to specific paths before committing.
 _Avoid_: sync, push, commit — each names only part of what this does, or collides with a narrower git operation.
 
 **Reset**:
-The operation that discards local drift in both Source and Target, forces Source to match Remote, then re-applies. Remote wins. Shows a diff and requires explicit confirmation before it runs.
+The operation that discards local drift in both Source and Target, forces Source to match Remote, then re-applies. Remote wins. Shows a diff and requires explicit confirmation before it runs. Refuses outright if any path is Diverged — mysh does no three-way merge, so it will not silently pick Remote's side of a path both sides changed; that has to be resolved with git directly first.
 _Avoid_: pull, merge — mysh does not attempt three-way merges; drop into git directly for that.
 
 **File-mode tracking**:

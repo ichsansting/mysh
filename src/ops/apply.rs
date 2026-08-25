@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::domain::fingerprint::Fingerprints;
 use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::domain::render::{self, RenderKind, SourcePlan};
 use crate::domain::{BACKUP_DIR_REL, overlay, package};
@@ -14,7 +15,9 @@ use std::path::{Path, PathBuf};
 pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
     let plan = render::enumerate(&config.source_dir)?;
     let log = AppLog::at(&config.target_dir);
-    render_plan(&plan, config, &log, passphrase)?;
+    let mut fingerprints = Fingerprints::at(&config.target_dir)?;
+    render_plan(&plan, config, &log, &mut fingerprints, passphrase)?;
+    fingerprints.save()?;
     prewarm_packages(config, &log)?;
     Ok(String::new())
 }
@@ -57,12 +60,16 @@ pub fn render_plan(
     plan: &SourcePlan,
     config: &Config,
     log: &AppLog,
+    fingerprints: &mut Fingerprints,
     passphrase: &mut PassphraseFn,
 ) -> Result<()> {
     let managed: HashSet<PathBuf> = log.managed_targets()?.into_iter().collect();
     for unit in &plan.units {
         let source = config.source_dir.join(&unit.source_rel);
         match unit.kind {
+            // No Fingerprint recorded here: `diff --quick` compares Plain
+            // units by reading Source directly (cheap, no decryption ever
+            // needed), the same as full `diff` does — nothing would read it.
             RenderKind::Plain => {
                 let content = fs::read(&source).at("read", &source)?;
                 let mode = fsx::mode_of(&source)?;
@@ -80,10 +87,12 @@ pub fn render_plan(
                     &plaintext,
                     Some(0o600),
                 )?;
+                fingerprints.set(unit.target_rel.clone(), &plaintext);
             }
             RenderKind::Fragment => {
                 let content = crate::domain::fragment::compose(&source, passphrase)?;
                 write_fully_owned(config, log, &managed, &unit.target_rel, &content, None)?;
+                fingerprints.set(unit.target_rel.clone(), &content);
             }
             // Overlay: enforce only the declared keys; never own, back up, or
             // restore the rest of the file (ADR-0008 — Partial ownership).

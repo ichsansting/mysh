@@ -21,25 +21,33 @@ Feature: Diff reports drift across Target, Source, and Remote
     Then the output reports target drift for ".bashrc"
     And the output reports no remote drift
 
-  Scenario: reports source vs remote drift only
+  Scenario: reports source ahead of remote only
     Given source file ".bashrc" with content "alias l=ls" committed and pushed
     And I ran "apply"
     And source file ".bashrc" is edited to "alias l=ls -la" and committed but not pushed
     And I ran "apply"
     When I run "diff"
-    Then the output reports remote drift for ".bashrc"
+    Then the output reports drift ahead of remote for ".bashrc"
     And the output reports no target drift
 
-  Scenario: reports remote drift for a file not yet pushed
+  Scenario: reports ahead drift for a file not yet pushed
     Given source file ".bashrc" with content "alias l=ls" committed but not pushed
     And I ran "apply"
     When I run "diff"
-    Then the output reports remote drift for ".bashrc"
+    Then the output reports drift ahead of remote for ".bashrc"
 
-  Scenario: reports remote drift for a file only on remote
+  Scenario: reports behind drift for a file only on remote
     Given another device pushed file ".vimrc" with content "set number"
     When I run "diff"
-    Then the output reports remote drift for ".vimrc"
+    Then the output reports drift behind remote for ".vimrc"
+
+  Scenario: reports diverged drift when both sides changed the same path
+    Given source file ".bashrc" with content "alias l=ls" committed and pushed
+    And I ran "apply"
+    And source file ".bashrc" is edited to "alias l=ls -la" and committed but not pushed
+    And another device pushed file ".bashrc" with content "alias l=ls --color"
+    When I run "diff"
+    Then the output reports diverged drift for ".bashrc"
 
   Scenario: reports both drifts together distinguishing sides
     Given source file ".bashrc" with content "alias l=ls" committed and pushed
@@ -48,7 +56,16 @@ Feature: Diff reports drift across Target, Source, and Remote
     And another device pushed file ".vimrc" with content "set number"
     When I run "diff"
     Then the output reports target drift for ".bashrc"
-    And the output reports remote drift for ".vimrc"
+    And the output reports drift behind remote for ".vimrc"
+
+  Scenario: diff --quick never contacts the network
+    Given source file ".bashrc" with content "alias l=ls" committed and pushed
+    And I ran "apply"
+    And another device pushed file ".vimrc" with content "set number"
+    When I run "diff --quick"
+    Then the output reports no drift
+    When I run "diff"
+    Then the output reports drift behind remote for ".vimrc"
 
   @dirmode
   Scenario: a .track-marked directory flags a new file present only in target
