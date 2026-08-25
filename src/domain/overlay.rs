@@ -55,7 +55,7 @@ pub fn merge(live: Option<&[u8]>, declared: &Map<String, Value>, path: &Path) ->
     Ok(out)
 }
 
-fn as_object(bytes: &[u8]) -> std::result::Result<Map<String, Value>, String> {
+pub(crate) fn as_object(bytes: &[u8]) -> std::result::Result<Map<String, Value>, String> {
     match serde_json::from_slice(bytes) {
         Ok(Value::Object(obj)) => Ok(obj),
         Ok(_) => Err("not a JSON object".to_string()),

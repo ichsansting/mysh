@@ -33,8 +33,12 @@ _Avoid_: patch, sync
 **Passphrase**:
 The single, shared secret used to derive the encryption key for every Secret, on every device. Prompted fresh on any command that needs to decrypt something; never cached or stored.
 
+**Diff**:
+Reports drift across the three-state model — Target vs a fresh render of Source, and Source vs Remote — as a list of paths and which side changed, without touching anything. Any listed path can be inspected further for the actual content difference behind the drift, not just that it exists — decrypted plaintext for a Secret, never ciphertext.
+_Avoid_: status
+
 **Save**:
-The operation that captures live edits in Target back into Source, commits, and pushes to Remote. Local wins. Shows a diff and requires explicit confirmation before it runs.
+The operation that captures live edits in Target back into Source and pushes Source's current state to Remote — including anything already sitting in Source unpushed (e.g. from Add) even where Target itself hasn't drifted. Local wins. Shows a diff and requires explicit confirmation before it runs, narrowable to specific paths before committing.
 _Avoid_: sync, push, commit — each names only part of what this does, or collides with a narrower git operation.
 
 **Reset**:

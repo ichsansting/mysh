@@ -29,3 +29,20 @@ Feature: Save captures live Target edits back into Source
     Then it succeeds
     And the output reports nothing to save
     And the remote is unchanged
+
+  Scenario: confirmed save also captures a directory-mode new file
+    Given source directory ".config/app" tracked with an empty ".track" marker
+    And source file ".config/app/base.toml" with content "a=1" committed and pushed
+    And I ran "apply"
+    And target file ".config/app/extra.toml" already exists with content "b=2"
+    When I run "save" answering "y"
+    Then it succeeds
+    And source ".config/app/extra.toml" contains exactly "b=2"
+    And the remote's latest commit contains ".config/app/extra.toml" with "b=2"
+
+  Scenario: confirmed save also pushes a secret added with no target drift
+    Given target file ".netrc" already exists with content "machine x login y"
+    And I ran "add --secret .netrc"
+    When I run "save" answering "y"
+    Then it succeeds
+    And the remote's latest commit contains ".netrc.age"

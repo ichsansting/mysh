@@ -41,7 +41,11 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
         }
         "save" => {
             expect_no_args(&leftover)?;
-            mysh::ops::save::run(&config, &mut std::io::stdin().lock(), &mut passphrase)
+            // No pre-locked stdin handed in here (unlike reset/teardown below):
+            // save may hand off to the interactive picker, which needs its own
+            // fresh lock on stdin for raw-mode key reads — holding one from out
+            // here for the whole call would deadlock against it.
+            mysh::ops::save::run(&config, &mut passphrase)
         }
         "reset" => {
             expect_no_args(&leftover)?;

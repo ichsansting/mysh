@@ -18,41 +18,19 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
-# --- Check required tools; never install them ourselves. ---
-missing=0
+# --- Provision the cross-build toolchain via mise instead of checking for it and
+# refusing: mise is assumed present (every device mysh manages already bootstraps
+# it — ADR-0005/0007), so there's no manual-install step left to document. `mise
+# shell` only works once `mise activate` has installed its shell function for this
+# session (that's what the eval does); everything after is on PATH for the rest of
+# this script. rustup itself comes from mise's `rust` tool — `target add` is still
+# a separate, idempotent step mise has no first-class equivalent for. ---
+eval "$(mise activate bash)"
+mise shell rust@latest zig@latest cargo:cargo-zigbuild@latest
 
-if ! command -v rustup >/dev/null 2>&1; then
-    echo "release.sh: rustup not found — install from https://rustup.rs" >&2
-    missing=1
-fi
-
-if ! command -v zig >/dev/null 2>&1; then
-    case "$(uname -s)" in
-        Linux) echo "release.sh: zig not found — install with: nix profile install nixpkgs#zig" >&2 ;;
-        Darwin) echo "release.sh: zig not found — install with: brew install zig" >&2 ;;
-        *) echo "release.sh: zig not found" >&2 ;;
-    esac
-    missing=1
-fi
-
-if ! cargo zigbuild --help >/dev/null 2>&1; then
-    echo "release.sh: cargo-zigbuild not found — install with: cargo install cargo-zigbuild" >&2
-    missing=1
-fi
-
-if [ "$missing" -eq 0 ]; then
-    installed_targets="$(rustup target list --installed)"
-    for target in "${TARGETS[@]}"; do
-        if ! grep -qx "$target" <<<"$installed_targets"; then
-            echo "release.sh: rust target $target not installed — install with: rustup target add $target" >&2
-            missing=1
-        fi
-    done
-fi
-
-if [ "$missing" -ne 0 ]; then
-    exit 1
-fi
+for target in "${TARGETS[@]}"; do
+    rustup target add "$target"
+done
 
 # --- Build every target. musl targets are fully static (self-contained); the darwin
 # target dynamically links only libSystem — true static linking isn't possible on

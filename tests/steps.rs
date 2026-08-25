@@ -732,6 +732,14 @@ fn remote_commit_contains(w: &mut World, rel: String, content: String) {
     );
 }
 
+#[then(expr = "the remote's latest commit contains {string}")]
+fn remote_commit_contains_path(w: &mut World, rel: String) {
+    assert!(
+        w.remote_has_path(&rel),
+        "remote main does not contain {rel}"
+    );
+}
+
 #[then(expr = "the remote is unchanged")]
 fn remote_unchanged(w: &mut World) {
     let before = w
@@ -968,6 +976,10 @@ fn release_checkout(w: &mut World) -> std::path::PathBuf {
 fn write_release_stubs(w: &World, cargo_zigbuild_works: bool) {
     let gh_calls = w.stub.join("gh.calls");
     let released = w.stub.join("gh-released");
+    // release.sh's `eval "$(mise activate bash)"` / `mise shell ...` just need to
+    // not fail here — the actual tools they'd put on PATH are these same stubs,
+    // already there directly, so the stub mise has nothing real to activate.
+    write_executable(&w.stub.join("mise"), b"#!/bin/sh\nexit 0\n");
     write_executable(
         &w.stub.join("rustup"),
         b"#!/bin/sh\nif [ \"$1 $2\" = \"target list\" ]; then\n  echo x86_64-unknown-linux-musl\n  echo aarch64-unknown-linux-musl\n  echo aarch64-apple-darwin\nfi\nexit 0\n",
@@ -1064,16 +1076,6 @@ fn release_create_then_update(w: &mut World, tag: String) {
     let create = create.unwrap_or_else(|| panic!("no release create in {calls:?}"));
     let edit = edit.unwrap_or_else(|| panic!("no release edit in {calls:?}"));
     assert!(create < edit, "create must precede edit: {calls:?}");
-}
-
-#[then(expr = "it fails mentioning how to install the missing tool")]
-fn release_fails_with_instructions(w: &mut World) {
-    fails(w);
-    assert!(
-        w.stderr().contains("cargo install cargo-zigbuild"),
-        "stderr lacks install instructions: {}",
-        w.stderr()
-    );
 }
 
 // =========================================================================

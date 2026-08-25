@@ -3,3 +3,4 @@ pub mod fsx;
 pub mod git;
 pub mod mise;
 pub mod prompt;
+pub mod tty;

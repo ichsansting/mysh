@@ -26,7 +26,7 @@ impl fmt::Display for DriftSide {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Drift {
     /// Target-relative path (source-relative for Remote drift, where the raw
     /// Source file — `.age` suffix and all — is what git compares).

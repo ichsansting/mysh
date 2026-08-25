@@ -268,6 +268,25 @@ impl World {
         .stdout
     }
 
+    /// Whether `rel` exists in the Remote's current main tip, without caring
+    /// what it contains (for binary/ciphertext content a feature file can't
+    /// spell out — presence after a push is the thing being checked).
+    pub fn remote_has_path(&self, rel: &str) -> bool {
+        let remote = self.remote.as_ref().expect("no bare remote declared");
+        Command::new("git")
+            .args([
+                "-C",
+                remote.to_str().unwrap(),
+                "cat-file",
+                "-e",
+                &format!("main:{rel}"),
+            ])
+            .output()
+            .expect("failed to spawn git")
+            .status
+            .success()
+    }
+
     pub fn remote_head(&self) -> String {
         let remote = self.remote.as_ref().expect("no bare remote declared");
         let output = Command::new("git")

@@ -4,6 +4,7 @@ pub mod glob;
 pub mod log;
 pub mod overlay;
 pub mod package;
+pub mod picker;
 pub mod render;
 
 /// mysh's per-device footprint, all under one target-relative directory.
