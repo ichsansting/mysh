@@ -3,10 +3,10 @@ use crate::domain::drift::{self, Drift, DriftSide};
 use crate::domain::fingerprint::{self, Fingerprints};
 use crate::domain::picker::Item;
 use crate::domain::render::{self, RenderKind, SourcePlan};
-use crate::domain::{fragment, glob, overlay};
-use crate::error::{Error, IoCtx, Result};
+use crate::domain::{glob, overlay};
+use crate::error::{Error, Result};
 use crate::infra::prompt::PassphraseFn;
-use crate::infra::{crypto, fsx, git, tty};
+use crate::infra::{fsx, git, tty};
 use std::fs;
 use std::path::Path;
 
@@ -84,19 +84,22 @@ fn target_content_diff(
     let target_path = config.target_dir.join(&unit.target_rel);
     let source_path = config.source_dir.join(&unit.source_rel);
     match unit.kind {
+        // No detour through `content()` here: Source and Target are both real
+        // files, so `git` can diff them directly — reading bytes into memory
+        // just to write them straight back out to a temp file would be pure
+        // overhead for the one kind that doesn't need it.
         RenderKind::Plain => git::diff_no_index(&source_path, &target_path),
         // Decrypted plaintext never touches disk except in this short-lived,
         // 0600 temp file — deleted immediately after the diff runs (see
         // ADR-0010; Target already holds this same plaintext at 0600 anyway).
         RenderKind::Secret => {
-            let envelope = fs::read(&source_path).at("read", &source_path)?;
-            let plaintext = crypto::decrypt(&envelope, &passphrase()?, &source_path)?;
+            let plaintext = unit.kind.content(&source_path, passphrase)?;
             with_temp_file(&plaintext, Some(0o600), |tmp| {
                 git::diff_no_index(tmp, &target_path)
             })
         }
         RenderKind::Fragment => {
-            let composed = fragment::compose(&source_path, passphrase)?;
+            let composed = unit.kind.content(&source_path, passphrase)?;
             with_temp_file(&composed, None, |tmp| git::diff_no_index(tmp, &target_path))
         }
         // Overlay drift is key-level (ADR-0008: partial ownership) — a whole-file
@@ -195,17 +198,9 @@ pub fn collect(config: &Config, passphrase: &mut PassphraseFn, quick: bool) -> R
             }
             _ => {}
         }
-        let expected = match unit.kind {
-            RenderKind::Plain => fs::read(&source).at("read", &source)?,
-            // Always plaintext-to-plaintext: a fresh decrypt of Source against
-            // the live Target, never ciphertext against plaintext.
-            RenderKind::Secret => {
-                let envelope = fs::read(&source).at("read", &source)?;
-                crypto::decrypt(&envelope, &passphrase()?, &source)?
-            }
-            RenderKind::Fragment => crate::domain::fragment::compose(&source, passphrase)?,
-            RenderKind::Overlay => unreachable!("handled and `continue`d above"),
-        };
+        // Always plaintext-to-plaintext for Secret: a fresh decrypt of Source
+        // against the live Target, never ciphertext against plaintext.
+        let expected = unit.kind.content(&source, passphrase)?;
         if fsx::read_opt(&target)?.as_deref() != Some(&expected[..]) {
             drifts.push(Drift {
                 rel: unit.target_rel.clone(),

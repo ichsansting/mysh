@@ -4,8 +4,8 @@ use crate::domain::log::{AppLog, LogEntry, Ownership};
 use crate::domain::render::{self, RenderKind, SourcePlan};
 use crate::domain::{BACKUP_DIR_REL, overlay, package};
 use crate::error::{IoCtx, Result};
+use crate::infra::fsx;
 use crate::infra::prompt::PassphraseFn;
-use crate::infra::{crypto, fsx};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -72,13 +72,12 @@ pub fn render_plan(
             // units by reading Source directly (cheap, no decryption ever
             // needed), the same as full `diff` does — nothing would read it.
             RenderKind::Plain => {
-                let content = fs::read(&source).at("read", &source)?;
+                let content = unit.kind.content(&source, passphrase)?;
                 let mode = fsx::mode_of(&source)?;
                 write_fully_owned(config, log, &managed, &unit.target_rel, &content, mode)?;
             }
             RenderKind::Secret => {
-                let envelope = fs::read(&source).at("read", &source)?;
-                let plaintext = crypto::decrypt(&envelope, &passphrase()?, &source)?;
+                let plaintext = unit.kind.content(&source, passphrase)?;
                 // 0600 always: a decrypted credential is never left group/world-readable.
                 write_fully_owned(
                     config,
@@ -91,7 +90,7 @@ pub fn render_plan(
                 fingerprints.set(unit.target_rel.clone(), &plaintext);
             }
             RenderKind::Fragment => {
-                let content = crate::domain::fragment::compose(&source, passphrase)?;
+                let content = unit.kind.content(&source, passphrase)?;
                 write_fully_owned(config, log, &managed, &unit.target_rel, &content, None)?;
                 fingerprints.set(unit.target_rel.clone(), &content);
             }

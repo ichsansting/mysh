@@ -1,5 +1,8 @@
+use crate::domain::fragment;
 use crate::error::{IoCtx, Result};
+use crate::infra::crypto;
 use crate::infra::fsx;
+use crate::infra::prompt::PassphraseFn;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -24,6 +27,25 @@ impl RenderKind {
     /// Source — there is no unambiguous piece to attribute a hand-edit to.
     pub fn is_derived(self) -> bool {
         matches!(self, RenderKind::Fragment | RenderKind::Overlay)
+    }
+
+    /// The expected content for a renderable unit: decrypt a Secret, compose a
+    /// Fragment, or read a Plain file straight. The one place Apply and Diff
+    /// both ask "what should this unit's content actually be" instead of
+    /// answering it themselves. Overlay is merged, not rendered — every caller
+    /// routes it away before reaching here.
+    pub fn content(self, source_path: &Path, passphrase: &mut PassphraseFn) -> Result<Vec<u8>> {
+        match self {
+            RenderKind::Plain => fs::read(source_path).at("read", source_path),
+            RenderKind::Secret => {
+                let envelope = fs::read(source_path).at("read", source_path)?;
+                crypto::decrypt(&envelope, &passphrase()?, source_path)
+            }
+            RenderKind::Fragment => fragment::compose(source_path, passphrase),
+            RenderKind::Overlay => {
+                unreachable!("Overlay is merged, not rendered — routed away by the caller")
+            }
+        }
     }
 }
 
@@ -216,5 +238,56 @@ mod tests {
         assert!(RenderKind::Overlay.is_derived());
         assert!(!RenderKind::Plain.is_derived());
         assert!(!RenderKind::Secret.is_derived());
+    }
+
+    #[test]
+    fn content_reads_a_plain_file_directly() {
+        let dir = std::env::temp_dir().join(format!("mysh-content-plain-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("f");
+        fs::write(&path, "hello").unwrap();
+        let mut pass = || unreachable!("Plain never decrypts");
+        assert_eq!(
+            RenderKind::Plain.content(&path, &mut pass).unwrap(),
+            b"hello"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn content_decrypts_a_secret() {
+        let dir = std::env::temp_dir().join(format!("mysh-content-secret-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("f.age");
+        let envelope = crypto::encrypt(b"topsecret", "correct horse", &path).unwrap();
+        fs::write(&path, &envelope).unwrap();
+        let mut pass = || Ok("correct horse".to_string());
+        assert_eq!(
+            RenderKind::Secret.content(&path, &mut pass).unwrap(),
+            b"topsecret"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn content_composes_a_fragment() {
+        let dir =
+            std::env::temp_dir().join(format!("mysh-content-fragment-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("10-a"), "a").unwrap();
+        fs::write(dir.join("20-b"), "b").unwrap();
+        let mut pass = || unreachable!("no Secret member in this fragment");
+        assert_eq!(
+            RenderKind::Fragment.content(&dir, &mut pass).unwrap(),
+            b"ab"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Overlay is merged, not rendered")]
+    fn content_panics_for_overlay() {
+        let mut pass = || Ok(String::new());
+        let _ = RenderKind::Overlay.content(Path::new("/nonexistent"), &mut pass);
     }
 }
