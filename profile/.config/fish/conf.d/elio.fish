@@ -1,0 +1,35 @@
+# >>> elio shell integration >>>
+function elio
+    switch "$argv[1]"
+        case shell '-*'
+            '/home/vscode/.mysh/mise/installs/github-elio-fm-elio/1.12.0/elio' $argv
+            return $status
+    end
+
+    for arg in $argv
+        switch "$arg"
+            case --chooser-file '--chooser-file=*'
+                '/home/vscode/.mysh/mise/installs/github-elio-fm-elio/1.12.0/elio' $argv
+                return $status
+        end
+    end
+
+    set -l tmp (mktemp -t "elio-cwd.XXXXXX")
+    or return
+
+    '/home/vscode/.mysh/mise/installs/github-elio-fm-elio/1.12.0/elio' --cwd-file "$tmp" $argv
+    set -l status_code $status
+
+    if test -s "$tmp"
+        set -l cwd (string collect < "$tmp")
+        rm -f "$tmp"
+        if test -n "$cwd"; and test "$cwd" != "$PWD"; and test -d "$cwd"
+            cd "$cwd"; or return $status
+        end
+    else
+        rm -f "$tmp"
+    end
+
+    return $status_code
+end
+# <<< elio shell integration <<<
