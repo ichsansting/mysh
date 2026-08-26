@@ -1,3 +1,19 @@
 #!/bin/sh
 export MISE_DATA_DIR="$HOME/.mysh/mise"
+
+if [ -z "$TF_ASSUME_WRAPPED" ]; then
+    profile=""
+    for arg in "$@"; do
+        case "$arg" in
+            *prod*.tfvars) profile="DeployerExt@tvlk-fpr-prod"; break ;;
+            *stg*.tfvars) profile="DeployerExt@tvlk-fpr-stg"; break ;;
+        esac
+    done
+
+    if [ -n "$profile" ]; then
+        export TF_ASSUME_WRAPPED=1
+        exec assume "$profile" -x --exec "terraform $*"
+    fi
+fi
+
 exec mise x terraform@"$(fish -c tf-version-name)" -- terraform "$@"
