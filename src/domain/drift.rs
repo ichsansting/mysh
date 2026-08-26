@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// Which comparison a piece of drift came from — the three-state model
 /// (Target/Source/Remote) plus Directory-mode's new/missing scan results.
 /// Remote drift is split by direction (ahead/behind/diverged) rather than a
-/// single flat side, so a caller can tell "needs save" from "needs reset"
+/// single flat side, so a caller can tell "needs save" from "needs update"
 /// without re-deriving it — mysh does not attempt three-way merges, so a
 /// diverged path is never auto-resolvable either direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,13 +13,13 @@ pub enum DriftSide {
     Target,
     /// Source has content Remote doesn't (uncommitted, unpushed, or untracked) — a save candidate.
     Ahead,
-    /// Remote has content Source doesn't — a reset candidate.
+    /// Remote has content Source doesn't — an update candidate.
     Behind,
     /// Both sides changed the same path since they last agreed — needs manual git resolution.
     Diverged,
     /// Directory-mode: present in Target, absent from Source (save candidate).
     New,
-    /// Directory-mode: present in Source, absent from Target (reset candidate).
+    /// Directory-mode: present in Source, absent from Target (update candidate).
     Missing,
 }
 

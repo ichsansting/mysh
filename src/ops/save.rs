@@ -15,7 +15,7 @@ use std::fs;
 /// nothing on the Target side has drifted at all. Local wins. Refused for
 /// derived Targets (Fragment/Overlay) — there is no unambiguous Source piece
 /// to attribute a hand-edit to. `Missing` drift is never offered here — that's
-/// a Reset candidate, not Save's job. Nor is `Behind`/`Diverged` — pushing
+/// an Update candidate, not Save's job. Nor is `Behind`/`Diverged` — pushing
 /// over content Remote has that Source doesn't isn't what "local wins" means;
 /// only `Ahead` (Source already correct, just unpushed) is actionable here.
 /// Always collects with `quick: false` — Save is about to actually commit and
@@ -50,7 +50,7 @@ pub fn run(config: &Config, passphrase: &mut PassphraseFn) -> Result<String> {
                 _ => "enforced by an overlay",
             };
             return Err(Error::Rejected(format!(
-                "{}: cannot save a target {kind}; use reset to discard the drift",
+                "{}: cannot save a target {kind}; use update to discard the drift",
                 drift.rel.display()
             )));
         }

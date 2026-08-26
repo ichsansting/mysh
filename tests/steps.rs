@@ -190,6 +190,17 @@ fn curl_downloads_mysh(w: &mut World) {
     w.curl_delivers_real_mysh();
 }
 
+#[given(expr = "a mysh binary is installed with content {string}")]
+fn mysh_binary_installed(w: &mut World, content: String) {
+    write_executable(&w.target_path(".mysh/bin/mysh"), content.as_bytes());
+}
+
+#[given(expr = "a mysh binary is installed matching the real compiled binary")]
+fn mysh_binary_installed_matching_real(w: &mut World) {
+    let content = fs::read(env!("CARGO_BIN_EXE_mysh")).unwrap();
+    write_executable(&w.target_path(".mysh/bin/mysh"), &content);
+}
+
 #[given(expr = "an rc file with content {string}")]
 fn rc_file(w: &mut World, content: String) {
     write_file(&w.rc_file.clone(), unescape(&content).as_bytes());
@@ -267,7 +278,7 @@ fn run_every_command_zero_flag(w: &mut World) {
         ("apply", &[], ""),
         ("diff", &[], ""),
         ("save", &[], "n\n"),
-        ("reset", &[], "n\n"),
+        ("update", &[], "n\n"),
         ("add", &["zeroflag.txt"], ""),
         ("teardown", &[], "n\n"),
     ];
@@ -440,9 +451,9 @@ fn output_nothing_to_save(w: &mut World) {
     assert_eq!(w.stdout(), "nothing to save\n");
 }
 
-#[then(expr = "the output reports nothing to reset")]
-fn output_nothing_to_reset(w: &mut World) {
-    assert_eq!(w.stdout(), "nothing to reset\n");
+#[then(expr = "the output reports nothing to update")]
+fn output_nothing_to_update(w: &mut World) {
+    assert_eq!(w.stdout(), "nothing to update\n");
 }
 
 #[then(expr = "the output does not contain ciphertext")]
@@ -781,6 +792,13 @@ fn curl_once(w: &mut World) {
 #[then(expr = "the curl stub was never invoked")]
 fn curl_never(w: &mut World) {
     assert_eq!(w.stub_calls("curl.calls").len(), 0);
+}
+
+#[then(expr = "the installed mysh binary matches the real compiled binary")]
+fn installed_mysh_matches_real(w: &mut World) {
+    let installed = fs::read(w.target_path(".mysh/bin/mysh")).unwrap();
+    let real = fs::read(env!("CARGO_BIN_EXE_mysh")).unwrap();
+    assert_eq!(installed, real, "installed mysh binary was not refreshed");
 }
 
 #[then(expr = "the mysh-owned mise binary exists")]

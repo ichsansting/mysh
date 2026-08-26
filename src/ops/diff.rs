@@ -21,7 +21,7 @@ use std::path::Path;
 /// drift is judged against `origin/main` as last fetched), and no decrypting
 /// Secrets or composing Fragments (their Target drift is judged against the
 /// Fingerprint cache instead of freshly-rendered content). Cheap and safe
-/// enough to run on every shell prompt render — see ADR-0012. Save and Reset
+/// enough to run on every shell prompt render — see ADR-0012. Save and Update
 /// always call `collect` with `quick: false`; only the read-only `diff`
 /// command exposes the flag.
 pub fn run(config: &Config, passphrase: &mut PassphraseFn, quick: bool) -> Result<String> {
@@ -144,7 +144,7 @@ fn with_temp_file<T>(
     result
 }
 
-/// The shared drift collection save/reset confirm against. `quick` skips
+/// The shared drift collection save/update confirm against. `quick` skips
 /// decryption/composition for Secret/Fragment units (compared against their
 /// cached Fingerprint instead) and skips `git fetch` for Remote drift — see
 /// `run`'s doc comment and ADR-0012.

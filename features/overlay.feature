@@ -2,7 +2,7 @@ Feature: Overlays enforce declared keys onto a Target mysh does not own
   A <name>.overlay file in Source declares only the keys mysh should enforce
   onto Target's <name> (JSON, shallow merge, key order preserved). Every other
   key in Target is left untouched and never read into Source. Derived-only:
-  drift can be re-enforced via apply/reset but never saved back.
+  drift can be re-enforced via apply/update but never saved back.
 
   Scenario: apply creates the target file when it does not exist yet
     Given source overlay ".claude.json.overlay" declaring {"hasCompletedOnboarding": true}
@@ -51,12 +51,12 @@ Feature: Overlays enforce declared keys onto a Target mysh does not own
     When I run "save" answering "y"
     Then it fails mentioning "overlay"
 
-  Scenario: reset discards drift by re-enforcing the declared value
+  Scenario: update discards drift by re-enforcing the declared value
     Given a bare remote
     And target file ".claude.json" already exists with content "{\"numStartups\": 42, \"hasCompletedOnboarding\": false}"
     And source overlay ".claude.json.overlay" declaring {"hasCompletedOnboarding": true}
     And the source is committed and pushed
-    When I run "reset" answering "y"
+    When I run "update" answering "y"
     Then target ".claude.json" as JSON has "hasCompletedOnboarding" equal to true
     And target ".claude.json" as JSON has "numStartups" equal to 42
 

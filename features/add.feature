@@ -95,6 +95,12 @@ Feature: Add starts tracking a new path in Source
     And the shim ".mysh/bin/ripgrep" contains no absolute device-specific path
     And the shim ".mysh/bin/ripgrep" is not marked eager
 
+  Scenario: package add materializes the shim into target immediately, no apply needed
+    When I run "add ripgrep"
+    Then it succeeds
+    And target ".mysh/bin/ripgrep" is byte-identical to its source shim
+    And target ".mysh/bin/ripgrep" is executable
+
   Scenario: package add lazy honors the --bin override
     When I run "add --bin rg ripgrep"
     Then it succeeds

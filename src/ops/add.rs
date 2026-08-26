@@ -1,8 +1,11 @@
 use crate::config::{Config, take_flag, take_switch};
-use crate::domain::render::{self, TRACK_MARKER};
+use crate::domain::fingerprint::Fingerprints;
+use crate::domain::log::AppLog;
+use crate::domain::render::{self, RenderKind, RenderUnit, SourcePlan, TRACK_MARKER};
 use crate::domain::{BIN_DIR_REL, glob, package};
 use crate::error::{Error, IoCtx, Result};
 use crate::infra::{crypto, fsx, prompt};
+use crate::ops::apply;
 use std::fs;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -128,5 +131,29 @@ fn add_package(config: &Config, specifier: &str, bin: Option<&str>, eager: bool)
     }
     let shim = package::shim_script(specifier, &bin_name, eager);
     fsx::write_if_changed(&dest, shim.as_bytes(), Some(0o755))?;
+    materialize(config, &shim_rel)?;
     Ok("added\n".to_string())
+}
+
+/// Renders one freshly-`add`ed unit straight into Target (ADR-0014), the same
+/// first-touch write and Application Log entry `apply` performs for any newly
+/// tracked unit — so a package specifier leaves Target and Source agreeing the
+/// moment `add` returns, same as the file/folder shapes already do. Does not
+/// prewarm an eager shim via `mise install`; that stays an `apply`-time batching
+/// concern (ADR-0007) — the tool still installs lazily on first invocation until
+/// the next `apply`.
+fn materialize(config: &Config, target_rel: &Path) -> Result<()> {
+    let plan = SourcePlan {
+        units: vec![RenderUnit {
+            source_rel: target_rel.to_path_buf(),
+            target_rel: target_rel.to_path_buf(),
+            kind: RenderKind::Plain,
+        }],
+        tracked_dirs: vec![],
+    };
+    let log = AppLog::at(&config.target_dir);
+    let mut fingerprints = Fingerprints::at(&config.target_dir)?;
+    let mut no_passphrase = || -> Result<String> { unreachable!("a Plain unit never decrypts") };
+    apply::render_plan(&plan, config, &log, &mut fingerprints, &mut no_passphrase)?;
+    fingerprints.save()
 }

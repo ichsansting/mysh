@@ -31,11 +31,11 @@ Feature: Secrets are encrypted in Source, plaintext only in Target
     And source ".netrc.age" does not contain the plaintext "machine x login z"
     And re-rendering ".netrc" from source yields exactly "machine x login z"
 
-  Scenario: reset on a secret re-decrypts source into target
+  Scenario: update on a secret re-decrypts source into target
     Given source secret ".netrc.age" encrypting "machine x login y" committed and pushed
     And I ran "apply"
     And target file ".netrc" is hand-edited to "machine x login z"
-    When I run "reset" answering "y"
+    When I run "update" answering "y"
     Then it succeeds
     And target ".netrc" contains exactly "machine x login y"
 

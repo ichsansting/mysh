@@ -54,8 +54,9 @@ fn prewarm_packages(config: &Config, log: &AppLog) -> Result<()> {
     Ok(())
 }
 
-/// Renders a whole SourcePlan. Shared with reset (which re-applies after
-/// forcing Source to match Remote).
+/// Renders a whole SourcePlan. Shared with update (which re-applies after
+/// forcing Source to match Remote) and with add (which renders just the one
+/// new unit a package specifier creates, straight into Target — ADR-0014).
 pub fn render_plan(
     plan: &SourcePlan,
     config: &Config,

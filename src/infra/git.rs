@@ -59,7 +59,7 @@ pub fn is_repo(dir: &Path) -> bool {
 
 /// Every Source path that differs from Remote's tip, and which direction:
 /// changed locally since the last common point (`Ahead`, a save candidate),
-/// changed on Remote (`Behind`, a reset candidate), or both (`Diverged` — no
+/// changed on Remote (`Behind`, an update candidate), or both (`Diverged` — no
 /// three-way merge, so this is never auto-resolved either direction).
 /// `fetch` controls whether Remote's tip is refreshed first: full `diff`
 /// fetches for an accurate answer; `diff --quick` skips it (no network in the
@@ -75,7 +75,7 @@ pub fn paths_differing_from_remote(dir: &Path, fetch: bool) -> Result<Vec<(PathB
         // A device that has never committed locally (its very first `diff`,
         // before ever running `save`/`add`) has no HEAD for `git diff`/`merge-base`
         // to resolve — nothing local can be Ahead by commit history, so every
-        // path Remote has is simply Behind (this device's first Reset candidate).
+        // path Remote has is simply Behind (this device's first Update candidate).
         let (local, remote): (HashSet<String>, HashSet<String>) = if has_head(dir) {
             let base = merge_base_with_remote(dir)?;
             let local = stdout_lines(&git(dir, &["diff", "--name-only", &base, "HEAD"])?)
@@ -207,7 +207,7 @@ fn diff_output(cmd: &mut Command) -> Result<String> {
 }
 
 /// Forces Source to exactly match Remote's tip, discarding local commits,
-/// edits, and untracked files (Reset's git leg).
+/// edits, and untracked files (Update's git leg).
 pub fn force_match_remote(dir: &Path) -> Result<()> {
     git(dir, &["fetch", "-q", "origin"])?;
     git(dir, &["reset", "-q", "--hard", "origin/main"])?;

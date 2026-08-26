@@ -2,7 +2,7 @@ use mysh::config::{Config, take_switch};
 use mysh::error::{Error, Result};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: mysh <apply|diff|save|reset|add|teardown> \
+const USAGE: &str = "usage: mysh <apply|diff|save|update|add|teardown> \
 [--source-dir <dir>] [--target-dir <dir>] [--passphrase <p>] [--quick]";
 
 fn main() -> ExitCode {
@@ -42,15 +42,15 @@ fn dispatch(command: &str, rest: &[String]) -> Result<String> {
         }
         "save" => {
             expect_no_args(&leftover)?;
-            // No pre-locked stdin handed in here (unlike reset/teardown below):
+            // No pre-locked stdin handed in here (unlike update/teardown below):
             // save may hand off to the interactive picker, which needs its own
             // fresh lock on stdin for raw-mode key reads — holding one from out
             // here for the whole call would deadlock against it.
             mysh::ops::save::run(&config, &mut passphrase)
         }
-        "reset" => {
+        "update" => {
             expect_no_args(&leftover)?;
-            mysh::ops::reset::run(&config, &mut std::io::stdin().lock(), &mut passphrase)
+            mysh::ops::update::run(&config, &mut std::io::stdin().lock(), &mut passphrase)
         }
         "add" => mysh::ops::add::run(&config, leftover, &mut std::io::stdin().lock()),
         _ => Err(Error::Usage(USAGE.to_string())),

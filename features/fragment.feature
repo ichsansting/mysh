@@ -1,7 +1,7 @@
 Feature: Fragments compose one Target file from pieces
   A <name>.frag/ directory in Source renders its members, in lexical filename
   order, into a single Target file <name>. Members may themselves be Secrets.
-  A composed Target is derived-only: drift shows on diff, reset discards it,
+  A composed Target is derived-only: drift shows on diff, update discards it,
   save refuses it (there is no unambiguous fragment to attribute an edit to).
 
   Background:
@@ -39,12 +39,12 @@ Feature: Fragments compose one Target file from pieces
     Then it fails mentioning "composed"
     And source fragment ".gitconfig.frag/10-base" contains exactly "[user]"
 
-  Scenario: reset discards drift by re-rendering fresh from fragments
+  Scenario: update discards drift by re-rendering fresh from fragments
     Given source fragment ".gitconfig.frag/10-base" with content "[user]"
     And the source is committed and pushed
     And I ran "apply"
     And target file ".gitconfig" is hand-edited to "[user][extra]"
-    When I run "reset" answering "y"
+    When I run "update" answering "y"
     Then target ".gitconfig" contains exactly "[user]"
 
   Scenario: diff --quick reports a fragment with a secret member clean right after apply
