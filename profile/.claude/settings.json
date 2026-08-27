@@ -1,5 +1,9 @@
 {
   "model": "sonnet[1m]",
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline-command.sh\""
+  },
   "enabledPlugins": {
     "ponytail@ponytail": true,
     "svelte@svelte": true,
@@ -19,11 +23,8 @@
       }
     }
   },
+  "tui": "fullscreen",
   "theme": "dark",
   "autoCompactEnabled": false,
-  "tui": "fullscreen",
-  "statusLine": {
-    "type": "command",
-    "command": "bash \"$HOME/.claude/statusline-command.sh\""
-  }
+  "agentPushNotifEnabled": true
 }
