@@ -42,7 +42,12 @@ toplevel=""
 if git -C "$cwd" --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   toplevel=$(git -C "$cwd" --no-optional-locks rev-parse --show-toplevel 2>/dev/null)
 fi
-repo=$(basename "${toplevel:-$cwd}")
+repo=""
+if [ -n "$toplevel" ]; then
+  origin_url=$(git -C "$cwd" --no-optional-locks config --get remote.origin.url 2>/dev/null)
+  [ -n "$origin_url" ] && repo=$(basename "$origin_url" .git)
+fi
+[ -z "$repo" ] && repo=$(basename "${toplevel:-$cwd}")
 
 work=()
 
@@ -58,10 +63,17 @@ if [ -n "$toplevel" ]; then
   unstaged=$(git -C "$cwd" --no-optional-locks diff --name-only 2>/dev/null | wc -l | tr -d ' ')
   added=$(git -C "$cwd" --no-optional-locks ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
 
-  work+=("${CYAN}${repo}${RESET}${DIM}@${RESET}${GREEN}${branch}${RESET}")
-  work+=("S: ${YELLOW}${staged}${RESET} | U: ${YELLOW}${unstaged}${RESET} | A: ${YELLOW}${added}${RESET}")
+  BOLD=$'\033[1m'
+  status=""
+  [ "$unstaged" -gt 0 ] && status="${status}!${unstaged}"
+  [ "$staged" -gt 0 ] && status="${status}+${staged}"
+  [ "$added" -gt 0 ] && status="${status}?${added}"
+  status_disp=""
+  [ -n "$status" ] && status_disp=" ${BOLD}${RED}[${status}]${RESET}"
+
+  work+=("${CYAN}${repo}${RESET}${DIM}@${RESET}${GREEN}${branch}${RESET}${status_disp}")
 else
-  work+=("${CYAN}${repo}${RESET}")
+  work+=("${CYAN}${cwd}${RESET}")
 fi
 
 line1=$(printf '%s | ' "${work[@]}")
