@@ -10,6 +10,13 @@ if [ -z "$TF_ASSUME_WRAPPED" ]; then
         esac
     done
 
+    if [ -z "$profile" ]; then
+        case "$PWD" in
+            */production/*) profile="DeployerExt@tvlk-fpr-prod" ;;
+            */staging/*) profile="DeployerExt@tvlk-fpr-stg" ;;
+        esac
+    fi
+
     if [ -n "$profile" ]; then
         export TF_ASSUME_WRAPPED=1
         exec assume "$profile" -x --exec "terraform $*"
