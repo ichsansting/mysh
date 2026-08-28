@@ -2,7 +2,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Blocked by:** 01
 
@@ -43,3 +43,17 @@ Preserve each file's executable bit (`0o755`).
   pushing/committing" rule.
 
 ## Comments
+
+- 44 of the 46 shims matched the plain `add`-generated template exactly and were
+  regenerated in bulk via `package::shim_script`, driven by a scratch `examples/`
+  binary (deleted after use, per the ticket).
+- `docker` and `terraform` are hand-written wrappers with custom sh logic around the
+  `exec mise x` line (conditional subcommand dispatch, AWS-profile-assume wrapping).
+  Driving them through `shim_script` would have discarded that logic, so their sh
+  bodies were hand-translated to fish syntax instead, preserving behavior. Verified
+  with `fish -n` on both.
+- Full verify checklist passed: shebang count is exactly 9 `#!/bin/sh` / 37
+  `#!/usr/bin/env fish`; `fish -n` clean on all 37 fish shims; `rg "mysh: eager"`
+  returns nothing under `profile/`; executable bits (`0o777` on this profile, not
+  `0o755` — preserved as-is rather than normalized) unchanged; `cargo test` green
+  (45 unit tests, 93 cucumber scenarios / 586 steps).

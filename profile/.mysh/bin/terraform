@@ -1,26 +1,32 @@
-#!/bin/sh
-export MISE_DATA_DIR="$HOME/.mysh/mise"
+#!/usr/bin/env fish
+set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
-if [ -z "$TF_ASSUME_WRAPPED" ]; then
-    profile=""
-    for arg in "$@"; do
-        case "$arg" in
-            *prod*.tfvars) profile="DeployerExt@tvlk-fpr-prod"; break ;;
-            *stg*.tfvars) profile="DeployerExt@tvlk-fpr-stg"; break ;;
-        esac
-    done
+if not set -q TF_ASSUME_WRAPPED
+    set profile ""
+    for arg in $argv
+        switch $arg
+            case '*prod*.tfvars'
+                set profile "DeployerExt@tvlk-fpr-prod"
+                break
+            case '*stg*.tfvars'
+                set profile "DeployerExt@tvlk-fpr-stg"
+                break
+        end
+    end
 
-    if [ -z "$profile" ]; then
-        case "$PWD" in
-            */production/*) profile="DeployerExt@tvlk-fpr-prod" ;;
-            */staging/*) profile="DeployerExt@tvlk-fpr-stg" ;;
-        esac
-    fi
+    if test -z "$profile"
+        switch $PWD
+            case '*/production/*'
+                set profile "DeployerExt@tvlk-fpr-prod"
+            case '*/staging/*'
+                set profile "DeployerExt@tvlk-fpr-stg"
+        end
+    end
 
-    if [ -n "$profile" ]; then
-        export TF_ASSUME_WRAPPED=1
-        exec assume "$profile" -x --exec "terraform $*"
-    fi
-fi
+    if test -n "$profile"
+        set -x TF_ASSUME_WRAPPED 1
+        exec assume "$profile" -x --exec "terraform $argv"
+    end
+end
 
-exec mise x terraform@"$(fish -c tf-version-name)" -- terraform "$@"
+exec mise x terraform@"$(fish -c tf-version-name)" -- terraform $argv

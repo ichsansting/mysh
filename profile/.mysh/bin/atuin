@@ -1,4 +1,3 @@
 #!/bin/sh
-# mysh: eager
 export MISE_DATA_DIR="$HOME/.mysh/mise"
 exec mise x atuin@latest -- atuin "$@"
