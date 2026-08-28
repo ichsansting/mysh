@@ -1,15 +1,17 @@
 # >>> elio shell integration >>>
 function elio
+    set bin $HOME/.mysh/bin/elio
+    
     switch "$argv[1]"
         case shell '-*'
-            'elio' $argv
+            $bin $argv
             return $status
     end
 
     for arg in $argv
         switch "$arg"
             case --chooser-file '--chooser-file=*'
-                'elio' $argv
+                $bin $argv
                 return $status
         end
     end
@@ -17,7 +19,7 @@ function elio
     set -l tmp (mktemp -t "elio-cwd.XXXXXX")
     or return
 
-    'elio' --cwd-file "$tmp" $argv
+    $bin --cwd-file "$tmp" $argv
     set -l status_code $status
 
     if test -s "$tmp"
