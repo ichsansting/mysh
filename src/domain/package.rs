@@ -1,9 +1,7 @@
 use crate::domain::MISE_DATA_DIR_REL;
 
-/// The marker line that makes a shim's Package eager: apply collects every marked
-/// shim's specifier into one batched `mise install` (ADR-0007). The shim file is the
-/// single per-package source of truth, so eagerness lives in it too.
-pub const EAGER_MARKER: &str = "# mysh: eager";
+/// An eager shim's shebang — also the exact signal `is_eager` reads back (ADR-0015).
+const EAGER_SHEBANG: &str = "#!/bin/sh";
 
 /// The binary name a specifier produces when not overridden with `--bin`: backend
 /// prefix (`github:`, `npm:`, ...) and version pin (`@...`) stripped, then the last
@@ -21,19 +19,22 @@ pub fn default_bin_name(specifier: &str) -> String {
 }
 
 /// A Package's shim: installs (on first use) and execs the real tool via
-/// `mise x <specifier> -- <invoke_name> "$@"`. Portable by design (ADR-0006/0007) —
+/// `mise x <specifier> -- <invoke_name> ...`. Portable by design (ADR-0006/0007) —
 /// resolves `$HOME` and `mise` at run time rather than baking in a device-specific
 /// path, since this is a real file checked into Source and shared across devices.
-/// An eager package gets the exact same shim plus the marker line.
+/// Eagerness lives in the shebang itself (ADR-0015): an eager shim stays `#!/bin/sh`
+/// with a `sh` body; a lazy shim is `#!/usr/bin/env fish` with a `fish` body, since
+/// the shebang decides which interpreter parses the whole file.
 pub fn shim_script(specifier: &str, invoke_name: &str, eager: bool) -> String {
-    let marker = if eager {
-        format!("{EAGER_MARKER}\n")
+    if eager {
+        format!(
+            "{EAGER_SHEBANG}\nexport MISE_DATA_DIR=\"$HOME/{MISE_DATA_DIR_REL}\"\nexec mise x {specifier} -- {invoke_name} \"$@\"\n"
+        )
     } else {
-        String::new()
-    };
-    format!(
-        "#!/bin/sh\n{marker}export MISE_DATA_DIR=\"$HOME/{MISE_DATA_DIR_REL}\"\nexec mise x {specifier} -- {invoke_name} \"$@\"\n"
-    )
+        format!(
+            "#!/usr/bin/env fish\nset -x MISE_DATA_DIR \"$HOME/{MISE_DATA_DIR_REL}\"\nexec mise x {specifier} -- {invoke_name} $argv\n"
+        )
+    }
 }
 
 /// The specifier a shim execs, parsed back out of its `exec mise x <specifier> -- ...`
@@ -48,9 +49,12 @@ pub fn shim_specifier(content: &str) -> Option<&str> {
         .map(|(specifier, _)| specifier)
 }
 
-/// Whether shim content carries the eager marker.
+/// Whether a shim is eager: an exact `#!/bin/sh` first line. Anything else — a lazy
+/// `#!/usr/bin/env fish` shebang, an empty file, a malformed/hand-edited shebang —
+/// is lazy, never an error (ADR-0015; matches the existing "unmatched shim shape
+/// stays lazy" rule).
 pub fn is_eager(content: &str) -> bool {
-    content.lines().any(|line| line == EAGER_MARKER)
+    content.lines().next() == Some(EAGER_SHEBANG)
 }
 
 #[cfg(test)]
@@ -62,10 +66,15 @@ mod tests {
         let lazy = shim_script("ripgrep", "rg", false);
         assert_eq!(shim_specifier(&lazy), Some("ripgrep"));
         assert!(!is_eager(&lazy));
+        assert!(lazy.starts_with("#!/usr/bin/env fish\n"));
+        assert!(lazy.contains("set -x MISE_DATA_DIR"));
+        assert!(lazy.ends_with("$argv\n"));
 
         let eager = shim_script("github:elio-fm/elio@latest", "elio", true);
         assert_eq!(shim_specifier(&eager), Some("github:elio-fm/elio@latest"));
         assert!(is_eager(&eager));
+        assert!(eager.starts_with("#!/bin/sh\n"));
+        assert!(eager.ends_with("\"$@\"\n"));
     }
 
     #[test]

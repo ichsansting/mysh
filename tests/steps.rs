@@ -175,6 +175,11 @@ fn stubbed_mise(w: &mut World) {
     w.stub_mise();
 }
 
+#[given(expr = "real fish resolvable on PATH")]
+fn real_fish(w: &mut World) {
+    w.stub_fish();
+}
+
 #[given(expr = "no mise resolvable on PATH")]
 fn no_mise_on_path(w: &mut World) {
     w.hide_real_mise = true;

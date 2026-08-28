@@ -70,11 +70,11 @@ The `mise`-format string a Package declares (e.g. `github:owner/repo@latest`, `n
 _Avoid_: package name, tool name — a specifier is the exact syntax mise resolves, not a human label.
 
 **Shim**:
-The real, portable file a Package renders as: a thin wrapper script that resolves `$HOME` and `mise` at run time rather than baking in a device-specific path, so the identical file is correct on every device it's rendered to. Execs `mise x <specifier> -- <bin name> "$@"`. An Eager package's shim carries the `# mysh: eager` marker line; a Lazy package's doesn't. A hand-edit that no longer matches this shape simply isn't prewarmable as Eager — it stays Lazy, never an error.
+The real, portable file a Package renders as: a thin wrapper script that resolves `$HOME` and `mise` at run time rather than baking in a device-specific path, so the identical file is correct on every device it's rendered to. Execs `mise x <specifier> -- <bin name> ...`. An Eager package's shim is `#!/bin/sh` (`sh` body); a Lazy package's is `#!/usr/bin/env fish` (`fish` body) — the shebang itself is the eager/lazy signal. A hand-edit that no longer matches the exact `#!/bin/sh` shape simply isn't prewarmable as Eager — it stays Lazy, never an error. See ADR-0015.
 _Avoid_: wrapper, stub — name it by what it's for, not just its shape.
 
 **Eager package**:
-A Package whose Shim carries the `# mysh: eager` marker line. Same mechanism as a Lazy package — the marker only changes *when* the tool is installed: Apply collects every eager Shim's Specifier and prewarms them all in one batched `mise install` (mise parallelizes the downloads), so always-needed tools are ready before first use. See ADR-0007.
+A Package whose Shim's shebang is exactly `#!/bin/sh`. Same mechanism as a Lazy package — the shebang only changes *when* the tool is installed: Apply collects every eager Shim's Specifier and prewarms them all in one batched `mise install` (mise parallelizes the downloads), so always-needed tools are ready before first use. See ADR-0007, ADR-0015.
 
 **Lazy package**:
 A Package declared as a Shim (not a line in a declarations file). Not installed until first invoked.

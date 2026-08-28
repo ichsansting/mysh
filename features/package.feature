@@ -1,9 +1,10 @@
 Feature: Packages are mise-managed CLI tools behind real shim files
   Every Package is a portable shim file in Source's .mysh/bin (ADR-0007).
-  An eager shim carries the "# mysh: eager" marker: apply collects every
-  eager specifier and prewarms them in one batched `mise install`. A lazy
-  shim installs on first invocation via `mise x`. mise itself is
-  self-bootstrapped into a mysh-owned prefix on first need (ADR-0005).
+  An eager shim's shebang is "#!/bin/sh": apply collects every eager
+  specifier and prewarms them in one batched `mise install`. A lazy shim's
+  shebang is "#!/usr/bin/env fish" and installs on first invocation via
+  `mise x` (ADR-0015). mise itself is self-bootstrapped into a mysh-owned
+  prefix on first need (ADR-0005).
 
   Scenario: apply bootstraps missing mise and logs it
     Given no mise resolvable on PATH
@@ -60,6 +61,7 @@ Feature: Packages are mise-managed CLI tools behind real shim files
 
   Scenario: a lazy shim installs then execs on first invocation
     Given a stubbed mise on PATH
+    And real fish resolvable on PATH
     And source lazy shim ".mysh/bin/rg" for specifier "ripgrep"
     And I ran "apply"
     When I invoke the rendered shim ".mysh/bin/rg" with argument "hello"

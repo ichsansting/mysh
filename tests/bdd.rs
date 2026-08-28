@@ -356,6 +356,25 @@ exit 0
         fs::copy(env!("CARGO_BIN_EXE_mysh"), self.stub.join("curl-payload")).unwrap();
     }
 
+    /// Symlinks a real (non-shim) `fish` interpreter into the stub dir, ahead of
+    /// ambient PATH — a lazy shim's `#!/usr/bin/env fish` shebang needs one to
+    /// actually parse and run the script (ADR-0015), and the ambient PATH on a
+    /// dev machine with mysh already installed may resolve `fish` to that
+    /// machine's own mysh-managed shim instead of a real interpreter.
+    pub fn stub_fish(&self) {
+        let ambient = std::env::var_os("PATH").unwrap_or_default();
+        let real_fish = std::env::split_paths(&ambient)
+            .map(|dir| dir.join("fish"))
+            .find(|path| {
+                path.is_file()
+                    && fs::read_to_string(path)
+                        .map(|s| !s.contains("exec mise x"))
+                        .unwrap_or(true)
+            })
+            .expect("no real (non-shim) fish interpreter found on PATH");
+        std::os::unix::fs::symlink(&real_fish, self.stub.join("fish")).unwrap();
+    }
+
     pub fn stub_calls(&self, name: &str) -> Vec<String> {
         fs::read_to_string(self.stub.join(name))
             .map(|s| s.lines().map(str::to_string).collect())
