@@ -2,14 +2,14 @@
 function elio
     switch "$argv[1]"
         case shell '-*'
-            '/home/vscode/.mysh/mise/installs/github-elio-fm-elio/1.12.0/elio' $argv
+            'elio' $argv
             return $status
     end
 
     for arg in $argv
         switch "$arg"
             case --chooser-file '--chooser-file=*'
-                '/home/vscode/.mysh/mise/installs/github-elio-fm-elio/1.12.0/elio' $argv
+                'elio' $argv
                 return $status
         end
     end
@@ -17,7 +17,7 @@ function elio
     set -l tmp (mktemp -t "elio-cwd.XXXXXX")
     or return
 
-    '/home/vscode/.mysh/mise/installs/github-elio-fm-elio/1.12.0/elio' --cwd-file "$tmp" $argv
+    'elio' --cwd-file "$tmp" $argv
     set -l status_code $status
 
     if test -s "$tmp"
