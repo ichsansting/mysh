@@ -1,3 +1,7 @@
 #!/bin/sh
 export MISE_DATA_DIR="$HOME/.mysh/mise"
+if [ "$1" = "compose" ]; then
+  shift
+  exec mise x docker-compose@latest -- docker-compose "$@"
+fi
 exec mise x docker-cli@latest -- docker "$@"
