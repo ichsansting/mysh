@@ -26,5 +26,6 @@
   "tui": "fullscreen",
   "theme": "dark",
   "autoCompactEnabled": false,
+  "remoteControlAtStartup": false,
   "agentPushNotifEnabled": true
 }
