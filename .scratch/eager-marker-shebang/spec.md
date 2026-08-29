@@ -38,5 +38,5 @@ on `PATH` — true today because `fish` is already an ordinary eager Package in 
 
 ## Tickets
 
-- [01 — Rewrite the marker mechanism in code](issues/01-shebang-encodes-eagerness.md)
-- [02 — Migrate the 46 real profile shims](issues/02-migrate-profile-shims.md) (blocked by 01)
+- [01 — Rewrite the marker mechanism in code](issues/01-shebang-encodes-eagerness.md) — done
+- [02 — Migrate the 46 real profile shims](issues/02-migrate-profile-shims.md) — done
