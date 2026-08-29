@@ -1,0 +1,5 @@
+#!/usr/bin/env fish
+set -x MISE_DATA_DIR "$HOME/.mysh/mise"
+set mise_bin (command -v mise)
+set -x PATH (string match -v (status dirname) $PATH)
+exec $mise_bin x rust@latest -- cargo $argv
