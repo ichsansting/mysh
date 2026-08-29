@@ -1,7 +1,7 @@
 #!/usr/bin/env fish
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
-if not set -q TF_ASSUME_WRAPPED
+if test -z "$TF_ASSUME_WRAPPED"
     set profile ""
     for arg in $argv
         switch $arg
