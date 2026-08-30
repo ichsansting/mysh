@@ -3,7 +3,7 @@
     "commit": "",
     "sessionUrl": false
   },
-  "model": "sonnet[1m]",
+  "model": "opus",
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
