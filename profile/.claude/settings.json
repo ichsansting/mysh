@@ -12,7 +12,8 @@
     "ponytail@ponytail": true,
     "svelte@svelte": true,
     "mattpocock-skills@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "diagram-design@diagram-design": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {
@@ -25,6 +26,12 @@
       "source": {
         "source": "github",
         "repo": "sveltejs/ai-tools"
+      }
+    },
+    "diagram-design": {
+      "source": {
+        "source": "github",
+        "repo": "cathrynlavery/diagram-design"
       }
     }
   },
