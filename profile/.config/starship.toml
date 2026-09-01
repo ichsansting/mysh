@@ -1,5 +1,11 @@
 format = "$username$hostname$directory$git_branch$git_status${custom.mysh}$rust$python$nodejs$cmd_duration$line_break$character"
+right_format = "$aws"
 palette = "catppuccin_mocha"
+
+# The granted-assumed profile, right side. Hidden when nothing is assumed.
+[aws]
+format = '[$profile]($style)'
+style = "bold sky"
 
 [character]
 error_symbol = "[❯](bold red)"
