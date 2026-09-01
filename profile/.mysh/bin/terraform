@@ -25,7 +25,8 @@ if not set -q TF_ASSUME_WRAPPED
 
     if test -n "$profile"
         set -x TF_ASSUME_WRAPPED 1
-        exec assume "$profile" -x --exec "terraform $argv"
+        assume "$profile" -x --exec "terraform $argv"
+        exit $status
     end
 end
 
