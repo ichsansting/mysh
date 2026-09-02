@@ -1,0 +1,28 @@
+#!/usr/bin/env fish
+set -x MISE_DATA_DIR "$HOME/.mysh/mise"
+
+switch (uname -s)-(uname -m)
+    case Linux-x86_64
+        set -f dir ubuntu_64bit
+    case Linux-aarch64 Linux-arm64
+        set -f dir ubuntu_arm64
+    case '*'
+        echo "session-manager-plugin: no .deb for "(uname -s)-(uname -m) >&2
+        exit 1
+end
+
+# mise's http backend can't list versions, so resolve "latest" ourselves. Cached a day.
+set -f vf "$HOME/.cache/session-manager-plugin.version"
+mkdir -p (dirname "$vf")
+set -f age (path mtime -R "$vf" 2>/dev/null; or echo 99999999)
+if test "$age" -gt 86400
+    curl -sf https://s3.amazonaws.com/session-manager-downloads/plugin/latest/VERSION -o "$vf.tmp" && mv "$vf.tmp" "$vf"
+end
+set -f v (cat "$vf" 2>/dev/null)
+if test -z "$v"
+    echo "session-manager-plugin: could not resolve latest version" >&2
+    exit 1
+end
+
+set -f base https://s3.amazonaws.com/session-manager-downloads/plugin
+exec mise x "http:session-manager-plugin[url=$base/$v/$dir/session-manager-plugin.deb,bin_path=bin,postinstall=cd \"\$MISE_TOOL_INSTALL_PATH\" && dpkg-deb -x bin/session-manager-plugin.deb tmp && mv tmp/usr/local/sessionmanagerplugin/bin/session-manager-plugin bin/ && rm -rf tmp bin/session-manager-plugin.deb]@$v" -- session-manager-plugin $argv
