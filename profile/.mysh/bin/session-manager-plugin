@@ -1,13 +1,21 @@
 #!/usr/bin/env fish
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
+# mise unpacks the mac zip itself; it can't read a .deb, so Linux digs the binary out in postinstall.
+set -f deb_opts 'bin_path=bin,postinstall=cd "$MISE_TOOL_INSTALL_PATH" && dpkg-deb -x bin/session-manager-plugin.deb tmp && mv tmp/usr/local/sessionmanagerplugin/bin/session-manager-plugin bin/ && rm -rf tmp bin/session-manager-plugin.deb'
+
 switch (uname -s)-(uname -m)
     case Linux-x86_64
-        set -f dir ubuntu_64bit
+        set -f art ubuntu_64bit/session-manager-plugin.deb
+        set -f opts $deb_opts
     case Linux-aarch64 Linux-arm64
-        set -f dir ubuntu_arm64
+        set -f art ubuntu_arm64/session-manager-plugin.deb
+        set -f opts $deb_opts
+    case Darwin-arm64
+        set -f art mac_arm64/sessionmanager-bundle.zip
+        set -f opts bin_path=sessionmanager-bundle/bin
     case '*'
-        echo "session-manager-plugin: no .deb for "(uname -s)-(uname -m) >&2
+        echo "session-manager-plugin: no build for "(uname -s)-(uname -m) >&2
         exit 1
 end
 
@@ -25,4 +33,4 @@ if test -z "$v"
 end
 
 set -f base https://s3.amazonaws.com/session-manager-downloads/plugin
-exec mise x "http:session-manager-plugin[url=$base/$v/$dir/session-manager-plugin.deb,bin_path=bin,postinstall=cd \"\$MISE_TOOL_INSTALL_PATH\" && dpkg-deb -x bin/session-manager-plugin.deb tmp && mv tmp/usr/local/sessionmanagerplugin/bin/session-manager-plugin bin/ && rm -rf tmp bin/session-manager-plugin.deb]@$v" -- session-manager-plugin $argv
+exec mise x "http:session-manager-plugin[url=$base/$v/$art,$opts]@$v" -- session-manager-plugin $argv
