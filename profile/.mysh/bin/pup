@@ -1,0 +1,3 @@
+#!/usr/bin/env fish
+set -x MISE_DATA_DIR "$HOME/.mysh/mise"
+exec mise x github:DataDog/pup@latest -- pup $argv
