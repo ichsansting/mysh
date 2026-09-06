@@ -35,8 +35,13 @@
       }
     }
   },
+  "language": "Bahasa Indonesia",
+  "feedbackDrafts": "off",
   "tui": "fullscreen",
+  "autoMemoryEnabled": false,
   "theme": "dark",
+  "editorMode": "normal",
   "autoCompactEnabled": false,
+  "remoteControlAtStartup": false,
   "agentPushNotifEnabled": true
 }
