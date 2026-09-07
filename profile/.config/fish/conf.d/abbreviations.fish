@@ -17,3 +17,7 @@ abbr -a gbr 'git branch'
 abbr -a gunstage 'git reset HEAD --'
 abbr -a glast 'git log -1 HEAD'
 abbr -a groot 'cd (git rev-parse --show-toplevel || pwd)'
+
+# git clone -> blobless partial + sparse cone; blobs fetched lazily on demand
+abbr -a gclone --command git --position anywhere --regex '^clone$' -- 'clone --filter=blob:none --sparse'
+abbr -a gunsparse 'git sparse-checkout disable'

@@ -18,6 +18,7 @@
 - Use specialized read-only tools like `grep`, `find`, or `ls` instead of chaining broad bash commands when inspecting.
 - When editing files, favor explicit content-hash anchors over retyping large blocks of unchanged code.
 - Run local validation checks (e.g., `npm run check`, `pytest`, `cargo test`) immediately after code changes to ensure nothing is broken.
+- Clone repos lean by default: `git clone --filter=blob:none --sparse <url>`. Widen with `git sparse-checkout set <dirs>`; run `git sparse-checkout disable` only when the full tree is actually needed.
 
 ## Committing
 
