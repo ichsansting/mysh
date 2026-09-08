@@ -3,7 +3,7 @@
     "commit": "",
     "sessionUrl": false
   },
-  "model": "gpt-5.6-sol",
+  "model": "gpt-5.6-sol[1m]",
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
@@ -13,7 +13,8 @@
     "svelte@svelte": true,
     "mattpocock-skills@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
-    "diagram-design@diagram-design": true
+    "diagram-design@diagram-design": true,
+    "impeccable@impeccable": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {
@@ -32,6 +33,12 @@
       "source": {
         "source": "github",
         "repo": "cathrynlavery/diagram-design"
+      }
+    },
+    "impeccable": {
+      "source": {
+        "source": "github",
+        "repo": "pbakaus/impeccable"
       }
     }
   },
