@@ -182,9 +182,9 @@ json.dump({"resources": resources}, sys.stdout)
             return 2
         end
         if test (count $local_archives) -gt 1
-            echo "Error: lebih dari satu archive lokal cocok untuk $address:" >&2
+            echo "Error: more than one local archive matches $address:" >&2
             printf '  %s\n' $local_archives >&2
-            echo 'Hapus archive duplikat agar target tidak ambigu.' >&2
+            echo 'Remove duplicate archives so the target is unambiguous.' >&2
             return 2
         end
         set -l local_archive "$local_archives[1]"
@@ -198,26 +198,26 @@ json.dump({"resources": resources}, sys.stdout)
                 --function-name "$function_name" \
                 --region "$region" \
                 --output json >"$function_json"
-            echo "Error: deployment package $function_name tidak dapat diambil." >&2
+            echo "Error: the deployment package for $function_name could not be retrieved." >&2
             return 2
         end
 
         if not command jq -e '.Configuration.CodeSha256 and .Code.Location' "$function_json" >/dev/null
-            echo "Error: respons get-function untuk $function_name tidak lengkap." >&2
+            echo "Error: the get-function response for $function_name is incomplete." >&2
             return 2
         end
 
         set -l package_type (command jq -r '.Configuration.PackageType // "Zip"' "$function_json")
         if test "$package_type" != Zip
-            echo "Error: $function_name menggunakan PackageType=$package_type, bukan Zip." >&2
+            echo "Error: $function_name uses PackageType=$package_type instead of Zip." >&2
             return 2
         end
 
         set -l deployed_hash (command jq -r '.Configuration.CodeSha256' "$function_json")
         if test "$deployed_hash" != "$before_hash"
-            echo "Error: plan untuk $function_name sudah tidak sesuai dengan deployment AWS." >&2
-            printf '  Hash plan awal : %s\n' "$before_hash" >&2
-            printf '  Hash AWS saat ini: %s\n' "$deployed_hash" >&2
+            echo "Error: the plan for $function_name no longer matches the AWS deployment." >&2
+            printf '  Initial plan hash: %s\n' "$before_hash" >&2
+            printf '  Current AWS hash : %s\n' "$deployed_hash" >&2
             return 2
         end
 
@@ -226,14 +226,14 @@ json.dump({"resources": resources}, sys.stdout)
         if not command curl --fail --silent --show-error --location \
                 --proto '=https' --tlsv1.2 \
                 --output "$deployed_archive" "$code_url"
-            echo "Error: gagal mengunduh deployment package $function_name." >&2
+            echo "Error: failed to download the deployment package for $function_name." >&2
             return 2
         end
         set --erase code_url
 
         set -l downloaded_hash (__tf_lambda_code_diff_file_hash "$deployed_archive")
         if test $status -ne 0; or test "$downloaded_hash" != "$deployed_hash"
-            echo "Error: hash deployment package hasil download tidak cocok untuk $function_name." >&2
+            echo "Error: the downloaded deployment package hash does not match for $function_name." >&2
             return 2
         end
 
@@ -243,7 +243,7 @@ json.dump({"resources": resources}, sys.stdout)
         if not __tf_lambda_code_diff_compare_archives \
                 "$deployed_archive" "$local_archive" "$report_json" \
                 "$resource_dir/deployed" "$resource_dir/planned" "$extract"
-            echo "Error: isi archive $function_name tidak dapat dibandingkan secara aman." >&2
+            echo "Error: the archive contents for $function_name could not be compared safely." >&2
             return 2
         end
 
@@ -259,7 +259,7 @@ json.dump({"resources": resources}, sys.stdout)
         printf 'Lambda: %s\n' "$function_name"
         printf 'Address: %s\n' "$address"
         printf 'AWS: %s / %s\n' "$account_id" "$region"
-        printf 'Archive lokal: %s\n' "$local_archive"
+        printf 'Local archive: %s\n' "$local_archive"
         printf 'Deployed: %s\n' "$deployed_hash"
         printf 'Planned : %s\n' "$after_hash"
 
@@ -267,7 +267,7 @@ json.dump({"resources": resources}, sys.stdout)
             echo 'Result: IDENTICAL_ARCHIVE'
         else if test "$content_equal" = true
             echo 'Result: METADATA_ONLY'
-            echo 'Isi efektif sama; hanya metadata atau encoding ZIP yang berbeda.'
+            echo 'Effective contents are identical; only ZIP metadata or encoding differs.'
         else
             echo 'Result: CONTENT_CHANGED'
             printf 'Summary: %s added, %s modified, %s deleted\n' \
@@ -286,11 +286,11 @@ json.dump({"resources": resources}, sys.stdout)
                     | command delta --paging=never
                 set -l diff_status $pipestatus
                 if test "$diff_status[1]" -ne 1
-                    echo 'Error: git gagal menghasilkan content diff.' >&2
+                    echo 'Error: git failed to produce the content diff.' >&2
                     return 2
                 end
                 if test "$diff_status[2]" -ne 0
-                    echo 'Error: delta gagal menampilkan diff.' >&2
+                    echo 'Error: delta failed to render the diff.' >&2
                     return 2
                 end
             end
@@ -411,10 +411,10 @@ MAX_SYMLINK_SIZE = 16 * 1024
 
 def normalize_name(raw_name):
     if chr(92) in raw_name:
-        raise ValueError(f"Nama entry ambigu: {raw_name!r}")
+        raise ValueError(f"Ambiguous entry name: {raw_name!r}")
     path = PurePosixPath(raw_name)
     if path.is_absolute() or ".." in path.parts:
-        raise ValueError(f"Path entry tidak aman: {raw_name!r}")
+        raise ValueError(f"Unsafe entry path: {raw_name!r}")
     normalized = str(path)
     if normalized in ("", "."):
         return None
@@ -439,7 +439,7 @@ def inspect_archive(path):
     with zipfile.ZipFile(path) as archive:
         bad_member = archive.testzip()
         if bad_member is not None:
-            raise ValueError(f"CRC ZIP tidak valid: {bad_member}")
+            raise ValueError(f"Invalid ZIP CRC: {bad_member}")
 
         for info in archive.infolist():
             name = normalize_name(info.filename)
@@ -450,7 +450,7 @@ def inspect_archive(path):
 
             total_size += info.file_size
             if total_size > MAX_TOTAL_SIZE:
-                raise ValueError("Ukuran archive setelah ekstraksi melebihi batas aman")
+                raise ValueError("The extracted archive size exceeds the safety limit")
 
             mode = (info.external_attr >> 16) & 0xFFFF
             permissions = stat.S_IMODE(mode)
@@ -462,15 +462,15 @@ def inspect_archive(path):
                 size = 0
             elif stat.S_ISLNK(mode):
                 if info.file_size > MAX_SYMLINK_SIZE:
-                    raise ValueError(f"Target symlink terlalu besar: {name}")
+                    raise ValueError(f"Symlink target is too large: {name}")
                 with archive.open(info) as source:
                     target_bytes = source.read(MAX_SYMLINK_SIZE + 1)
                 try:
                     target = target_bytes.decode("utf-8")
                 except UnicodeDecodeError as error:
-                    raise ValueError(f"Target symlink bukan UTF-8: {name}") from error
+                    raise ValueError(f"Symlink target is not UTF-8: {name}") from error
                 if "\x00" in target:
-                    raise ValueError(f"Target symlink mengandung NUL: {name}")
+                    raise ValueError(f"Symlink target contains NUL: {name}")
                 entry_type = "symlink"
                 content_hash = hashlib.sha256(target_bytes).hexdigest()
                 size = len(target_bytes)
@@ -481,7 +481,7 @@ def inspect_archive(path):
                     content_hash = digest_stream(source)
                 size = info.file_size
             else:
-                raise ValueError(f"Tipe ZIP entry tidak didukung: {name}")
+                raise ValueError(f"Unsupported ZIP entry type: {name}")
 
             manifest[name] = {
                 "type": entry_type,
@@ -496,7 +496,7 @@ def inspect_archive(path):
 def safe_symlink_target(name, target):
     target_path = PurePosixPath(target)
     if target_path.is_absolute():
-        raise ValueError(f"Target symlink absolut: {name}")
+        raise ValueError(f"Absolute symlink target: {name}")
 
     parts = []
     for part in PurePosixPath(name).parent.joinpath(target_path).parts:
@@ -504,7 +504,7 @@ def safe_symlink_target(name, target):
             continue
         if part == "..":
             if not parts:
-                raise ValueError(f"Target symlink keluar dari root: {name}")
+                raise ValueError(f"Symlink target escapes the extraction root: {name}")
             parts.pop()
         else:
             parts.append(part)
@@ -518,7 +518,7 @@ def extract_archive(path, destination, manifest, symlink_targets):
         parent = PurePosixPath(name).parent
         while str(parent) not in ("", "."):
             if str(parent) in symlink_names:
-                raise ValueError(f"Parent entry berupa symlink: {name}")
+                raise ValueError(f"Parent entry is a symlink: {name}")
             parent = parent.parent
 
     with zipfile.ZipFile(path) as archive:
