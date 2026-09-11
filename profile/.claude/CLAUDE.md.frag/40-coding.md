@@ -28,3 +28,4 @@ Write maintainable code that remains understandable after long periods without c
 
 - Apply Chesterton's Fence: understand existing logic before modifying it.
 - Refactors preserve identical inputs, outputs, side effects, and externally observable behavior unless a change is explicitly required.
+

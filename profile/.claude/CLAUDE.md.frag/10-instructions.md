@@ -46,3 +46,4 @@ Only an explicit user instruction may override a global maintainability rule. Te
 - If an explicit repository workflow requires one large, squashed, or batched commit, tell the user before deviating from the small-commit default.
 - The active agent may commit directly. A subagent may perform the entire commit operation when delegation enables parallel work.
 - Never push without explicit user approval.
+
