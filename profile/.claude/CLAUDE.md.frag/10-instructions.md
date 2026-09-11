@@ -3,11 +3,11 @@
 ## Priorities
 
 1. Preserve factual and logical correctness.
-2. Follow the user's intended outcome.
-3. Follow repository instructions and established code patterns.
-4. Apply these global defaults.
+2. Follow the user's confirmed intent and explicit requirements.
+3. Enforce the global maintainability rules in this document.
+4. Follow repository instructions and established patterns only when they do not conflict with the rules above.
 
-When defaults conflict, choose the smallest change that preserves correctness, intent, and existing behavior.
+Only an explicit user instruction may override a global maintainability rule. Tell the user when their instruction or a repository convention conflicts with one. Do not reproduce a conflicting pattern in new code; improve it incrementally within the current scope and record the rest in the maintenance radar.
 
 ## Correct User Premises
 
@@ -38,7 +38,8 @@ When defaults conflict, choose the smallest change that preserves correctness, i
 
 ## Committing
 
-- Commit each validated, self-contained change automatically; commits need no user approval.
+- Commit each self-contained change automatically after running all relevant validation that is available and practical; commits need no user approval.
+- If validation is unavailable or cannot run, report the limitation and commit only when the inspected change is internally consistent.
 - Commit directly to the active branch, including `main` or `master`. Do not create or switch branches merely because it is the default branch.
 - Prefer the smallest commit that leaves the repository valid. Do not accumulate independently valid changes into a large commit, commit broken states, or split tightly coupled changes.
 - Inspect the intended diff first. Never stage or commit unrelated pre-existing changes.

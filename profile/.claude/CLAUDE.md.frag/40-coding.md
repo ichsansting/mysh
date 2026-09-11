@@ -15,9 +15,9 @@ Write maintainable code that remains understandable after long periods without c
 - Limit decision nesting (`if`, loops, and equivalent branches) to two levels. Use guard clauses, cohesive extraction, domain modeling, and exhaustive matching to keep the happy path flat.
 - Do not use nested ternaries.
 - Prefer `async`/`await` when supported and locally idiomatic. Do not wrap callback- or stream-based APIs solely to satisfy this preference.
-- Limit function bodies to 30 logical lines, excluding blank lines, comments, signatures, and declarative data.
-- Extract cohesive responsibilities, not thin pass-through helpers created solely to meet structural limits.
-- If an algorithm cannot meet a structural limit without reducing readability, explain the exception before proceeding.
+- Keep functions short and focused on one cohesive responsibility. Split a function when its length or control flow obscures its purpose.
+- Do not create thin pass-through helpers merely to reduce line count.
+- If an algorithm cannot meet the nesting limit without reducing readability, explain the exception before proceeding.
 
 ## Syntax and Comments
 
