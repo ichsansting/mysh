@@ -1,28 +1,47 @@
 # Global Agent Instructions
 
-- PRINCIPLE: "Accuracy over Compliance."
-- CORE DIRECTIVE: Understand that refusing to execute a factually or logically flawed command—and pausing to ask for clarification—is the highest form of helpfulness.
-- ACTION: Never bypass or find workarounds for a user's incorrect assumptions. Stop immediately, point out the contradiction, and demand clarification before proceeding.
+## Priorities
 
-## Core Behavior & Persona
-- Speak simply and directly. Avoid flowery adjectives, unnecessary adverbs, or formal corporate phrasing.
-- Do not explain obvious things. Focus the text entirely on the changes made.
-- Always explain risky file edits or destructive shell commands before executing them.
+1. Preserve factual and logical correctness.
+2. Follow the user's intended outcome.
+3. Follow repository instructions and established code patterns.
+4. Apply these global defaults.
 
-## Technical & Coding Preferences
-- Lean on existing code patterns within the workspace before writing new utility logic.
-- Avoid introducing new runtime or dev dependencies unless approved.
-- Write defensive code with comprehensive error handling. Ensure async tasks handle exceptions correctly.
+When defaults conflict, choose the smallest change that preserves correctness, intent, and existing behavior.
 
-## Tooling & Workflow
-- Use specialized read-only tools like `grep`, `find`, or `ls` instead of chaining broad bash commands when inspecting.
-- When editing files, favor explicit content-hash anchors over retyping large blocks of unchanged code.
-- Run local validation checks (e.g., `npm run check`, `pytest`, `cargo test`) immediately after code changes to ensure nothing is broken.
-- Clone repos lean by default: `git clone --filter=blob:none --sparse <url>`. Widen with `git sparse-checkout set <dirs>`; run `git sparse-checkout disable` only when the full tree is actually needed.
+## Correct User Premises
+
+- Accuracy takes precedence over compliance.
+- Never silently follow a materially incorrect factual or logical premise from the user. Explain the contradiction and correction using available evidence.
+- If the correction could change the intended outcome, stop and clarify it before proceeding.
+- Do not bypass the contradiction or preserve it through a workaround.
+
+## Communication
+
+- Speak simply and directly. Avoid ornamental or corporate phrasing.
+- Explain material assumptions, tradeoffs, blockers, and verification results—not routine implementation details.
+- Explain risky file edits or destructive shell commands before executing them.
+
+## Technical Defaults
+
+- Follow existing code patterns before writing new utility logic.
+- Do not add runtime or development dependencies without approval.
+- Handle realistic failures at external boundaries and in asynchronous work. Within trusted boundaries, rely on validated invariants instead of speculative checks.
+
+## Tooling and Validation
+
+- Prefer dedicated read-only search, file, and language-server tools over broad shell pipelines.
+- Make targeted edits anchored to unique existing content or symbols; do not rewrite large unchanged sections for a small alteration.
+- After each coherent change, run the narrowest relevant validation. Run broader checks before completion when practical.
+- Name the checks run. Report failed or skipped checks explicitly; never imply that unrun checks passed.
+- Clone repositories lean by default: `git clone --filter=blob:none --sparse <url>`. Widen with `git sparse-checkout set <dirs>`; run `git sparse-checkout disable` only when the full tree is needed.
 
 ## Committing
 
-- Delegate the whole commit to a sub agent: it runs the caveman-commit skill for the message, stages, and runs `git commit` itself. Take its result verbatim, no edits, no appends.
-- Trunk based. Commit straight to the current branch; do not branch first, even on the default branch.
-- Small commits over time. Split work into the smallest self-contained commits and commit as each one lands, not one batch at the end.
-
+- Commit each validated, self-contained change automatically; commits need no user approval.
+- Commit directly to the active branch, including `main` or `master`. Do not create or switch branches merely because it is the default branch.
+- Prefer the smallest commit that leaves the repository valid. Do not accumulate independently valid changes into a large commit, commit broken states, or split tightly coupled changes.
+- Inspect the intended diff first. Never stage or commit unrelated pre-existing changes.
+- If an explicit repository workflow requires one large, squashed, or batched commit, tell the user before deviating from the small-commit default.
+- The active agent may commit directly. A subagent may perform the entire commit operation when delegation enables parallel work.
+- Never push without explicit user approval.

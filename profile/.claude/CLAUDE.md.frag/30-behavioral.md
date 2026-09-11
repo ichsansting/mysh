@@ -1,63 +1,53 @@
-# Behavioral guidelines
+# Behavioral Guidelines
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+These rules favor verified understanding and maintainability over speed. Use judgment for trivial tasks.
 
-## 1. Think Before Coding
+## Verify Before Coding
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+Never treat model memory, convention, or unstated inference as fact.
 
 Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+- Separate verified facts from assumptions. Verify technical facts through the repository, focused tests, runtime behavior, or official documentation.
+- State unverified assumptions that could affect scope, behavior, architecture, safety, or acceptance criteria.
+- Ask the user about intent when they can resolve uncertainty faster than extended research.
+- If interpretations would produce meaningfully different results, present them and confirm which matches the user's intent.
+- Do not ask for facts that can be established quickly and reliably from the repository.
+- Present simpler approaches and push back when warranted. If material uncertainty remains, stop and ask rather than choosing silently.
 
-## 2. Simplicity First
+## Simplicity First
 
-**Minimum code that solves the problem. Nothing speculative.**
+Write the minimum code that fully solves the problem:
+- No unrequested features, single-use abstractions, or speculative configurability.
+- No handling for states excluded by validated invariants or the type system.
+- Simplify implementations that are substantially larger than necessary.
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+Ask: "Would a senior engineer consider this overcomplicated?" If yes, simplify it.
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+## Surgical Changes
 
-## 3. Surgical Changes
+- Every changed line must serve the request, an approved decision, or correctness.
+- Do not perform drive-by refactors.
+- Remove imports, variables, functions, and files made unused by your changes.
 
-**Touch only what you must. Clean up only your own mess.**
+## Maintenance Radar
 
-When editing existing code, mention anything you notice below. Don't act on it unless asked:
-- Improvement opportunity in adjacent code, comments, or formatting
-- Refactor opportunity
-- A better approach than the existing style/pattern
-- Unrelated/pre-existing dead code
+While working, notice defects, dead code, unclear structure, unnecessary complexity, missing tests, refactoring opportunities, and inconsistencies in inspected code paths.
 
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
+Do not expand scope automatically. Report relevant opportunities separately with a location, concise rationale, and suggested next action.
 
-The test: Every changed line should trace directly to the user's request or approval.
+Fix an adjacent issue immediately only when it blocks the work, was caused or exposed by the current change, would otherwise make the result incorrect, or the user approves the expanded scope.
 
-## 4. Goal-Driven Execution
+## Goal-Driven Execution
 
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
+Define verifiable success criteria and work until they are satisfied:
+- Add validation → test invalid inputs, then make the tests pass.
+- Fix a bug → reproduce it with a test, then make the test pass.
+- Refactor → establish passing tests before and after.
 
 For multi-step tasks, state a brief plan:
-```
+
+```text
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
 3. [Step] → verify: [check]
 ```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-

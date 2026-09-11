@@ -1,23 +1,30 @@
-# Agent Directives: Readability & Minimal-Depth Code Chains
+# Readable, Explicit Code
 
-## 1. Project Intent
-* **Goal**: Write highly maintainable, flat, explicit code. 
-* **Core Philosophy**: Prioritize clarity over cleverness; eliminate cognitive load.
+Write maintainable code that remains understandable after long periods without context. Prioritize clarity over cleverness and reduce cognitive load.
 
-## 2. Code-Chain Constraints
-* **Max Nesting**: Strictly enforce a maximum depth of 2 structural blocks (`if`, `loops`).
-* **Guard Clauses**: Use early returns to keep the happy path completely flat.
-* **No Nested Ternaries**: Do not use inline nested conditional statements.
-* **No Callback Pyramids**: Linearize asynchronous logic using strict async/await syntax.
-* **Rule of 30**: Break any function exceeding 30 lines into isolated, single-concern units.
+## Naming and Types
 
-## 3. Formatting & Readability Guidelines
-* **Explicit Naming**: Choose descriptive, self-documenting variable and function names.
-* **Function Syntax**: Prefer standard `function` declarations over arrow functions for top-level code.
-* **Type Annotations**: Always enforce strict, explicit return types for all public interfaces.
-* **Comments**: Remove noise; document *why* a constraint exists, never *what* the syntax does.
+- Use names that communicate domain meaning and intent. Avoid vague names such as `data`, `item`, `value`, `result`, or `handler` when a specific name exists.
+- Prefer concise names only when unambiguous in the immediate scope.
+- Use the strictest practical type checking supported by the language, framework, and repository. Type public interfaces and important domain boundaries explicitly where supported.
+- Make invalid states unrepresentable when it improves clarity. Prefer discriminated unions, enums, validated value objects, exhaustive matching, and constrained constructors over boolean combinations and defensive branches.
+- Do not weaken types with `any`, unchecked casts, broad unions, or unnecessary nullable fields merely to compile.
 
-## 4. Workflow Boundaries
-* **Chesterton’s Fence**: Analyze existing logic before modifying it; do not perform drive-by refactors.
-* **Behavior Preservation**: Refactorings must preserve identical inputs, outputs, and side-effects.
+## Control Flow
 
+- Limit decision nesting (`if`, loops, and equivalent branches) to two levels. Use guard clauses, cohesive extraction, domain modeling, and exhaustive matching to keep the happy path flat.
+- Do not use nested ternaries.
+- Prefer `async`/`await` when supported and locally idiomatic. Do not wrap callback- or stream-based APIs solely to satisfy this preference.
+- Limit function bodies to 30 logical lines, excluding blank lines, comments, signatures, and declarative data.
+- Extract cohesive responsibilities, not thin pass-through helpers created solely to meet structural limits.
+- If an algorithm cannot meet a structural limit without reducing readability, explain the exception before proceeding.
+
+## Syntax and Comments
+
+- Prefer `function` declarations for reusable top-level JavaScript or TypeScript functions unless a stronger local convention exists.
+- Comments explain intent, constraints, or non-obvious decisions—not syntax.
+
+## Workflow Boundaries
+
+- Apply Chesterton's Fence: understand existing logic before modifying it.
+- Refactors preserve identical inputs, outputs, side effects, and externally observable behavior unless a change is explicitly required.
