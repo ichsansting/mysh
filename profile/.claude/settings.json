@@ -3,7 +3,6 @@
     "commit": "",
     "sessionUrl": false
   },
-  "model": "gpt-5.6-sol[1m]",
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
