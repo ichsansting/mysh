@@ -16,32 +16,44 @@
     "mattpocock-skills@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "diagram-design@diagram-design": true,
-    "impeccable@impeccable": true
+    "impeccable@impeccable": true,
+    "automem@verygoodplugins-mcp-automem": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {
       "source": {
         "source": "github",
         "repo": "DietrichGebert/ponytail"
-      }
+      },
+      "autoUpdate": true
     },
     "svelte": {
       "source": {
         "source": "github",
         "repo": "sveltejs/ai-tools"
-      }
+      },
+      "autoUpdate": true
     },
     "diagram-design": {
       "source": {
         "source": "github",
         "repo": "cathrynlavery/diagram-design"
-      }
+      },
+      "autoUpdate": true
     },
     "impeccable": {
       "source": {
         "source": "github",
         "repo": "pbakaus/impeccable"
-      }
+      },
+      "autoUpdate": true
+    },
+    "verygoodplugins-mcp-automem": {
+      "source": {
+        "source": "github",
+        "repo": "verygoodplugins/mcp-automem"
+      },
+      "autoUpdate": true
     }
   },
   "language": "Bahasa Indonesia",
