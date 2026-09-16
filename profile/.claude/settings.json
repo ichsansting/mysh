@@ -1,75 +1,75 @@
 {
-  "agentPushNotifEnabled": true,
-  "alwaysThinkingEnabled": false,
   "attribution": {
     "commit": "",
     "sessionUrl": false
   },
-  "autoCompactEnabled": false,
-  "autoContinueAtUsageLimit": false,
-  "autoMemoryEnabled": false,
-  "awaySummaryEnabled": false,
-  "dialogExpiry": "never",
-  "editorMode": "normal",
   "enableArtifact": false,
   "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"$HOME/.claude/statusline-command.sh\""
+  },
   "enabledPlugins": {
-    "automem@verygoodplugins-mcp-automem": true,
+    "automem@verygoodplugins-mcp-automem": false,
     "diagram-design@diagram-design": true,
-    "impeccable@impeccable": true,
+    "impeccable@impeccable": false,
     "mattpocock-skills@claude-plugins-official": true,
     "ponytail@ponytail": true,
-    "svelte@svelte": true,
-    "typescript-lsp@claude-plugins-official": true
+    "svelte@svelte": false,
+    "typescript-lsp@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
-      "autoUpdate": true,
       "source": {
-        "repo": "cathrynlavery/diagram-design",
-        "source": "github"
-      }
+        "source": "github",
+        "repo": "cathrynlavery/diagram-design"
+      },
+      "autoUpdate": true
     },
     "impeccable": {
-      "autoUpdate": true,
       "source": {
-        "repo": "pbakaus/impeccable",
-        "source": "github"
-      }
+        "source": "github",
+        "repo": "pbakaus/impeccable"
+      },
+      "autoUpdate": true
     },
     "ponytail": {
-      "autoUpdate": true,
       "source": {
-        "repo": "DietrichGebert/ponytail",
-        "source": "github"
-      }
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      },
+      "autoUpdate": true
     },
     "svelte": {
-      "autoUpdate": true,
       "source": {
-        "repo": "sveltejs/ai-tools",
-        "source": "github"
-      }
+        "source": "github",
+        "repo": "sveltejs/ai-tools"
+      },
+      "autoUpdate": true
     },
     "verygoodplugins-mcp-automem": {
-      "autoUpdate": true,
       "source": {
-        "repo": "verygoodplugins/mcp-automem",
-        "source": "github"
-      }
+        "source": "github",
+        "repo": "verygoodplugins/mcp-automem"
+      },
+      "autoUpdate": true
     }
   },
-  "feedbackDrafts": "off",
   "language": "Bahasa Indonesia",
-  "remoteControlAtStartup": false,
-  "statusLine": {
-    "command": "bash \"$HOME/.claude/statusline-command.sh\"",
-    "type": "command"
-  },
-  "switchModelsOnFlag": false,
-  "theme": "dark",
-  "timeFormat": "24-hour",
+  "feedbackDrafts": "off",
+  "alwaysThinkingEnabled": false,
+  "awaySummaryEnabled": false,
+  "dialogExpiry": "never",
   "tui": "fullscreen",
+  "timeFormat": "24-hour",
+  "autoMemoryEnabled": false,
+  "theme": "dark",
+  "editorMode": "normal",
   "verbose": true,
-  "workflowKeywordTriggerEnabled": false
+  "autoCompactEnabled": false,
+  "switchModelsOnFlag": false,
+  "autoContinueAtUsageLimit": false,
+  "remoteControlAtStartup": false,
+  "agentPushNotifEnabled": true
 }
