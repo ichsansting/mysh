@@ -1,75 +1,75 @@
 {
+  "agentPushNotifEnabled": true,
+  "alwaysThinkingEnabled": false,
   "attribution": {
     "commit": "",
     "sessionUrl": false
   },
-  "enableArtifact": false,
-  "enableWorkflows": false,
-  "workflowKeywordTriggerEnabled": false,
-  "statusLine": {
-    "type": "command",
-    "command": "bash \"$HOME/.claude/statusline-command.sh\""
-  },
-  "enabledPlugins": {
-    "ponytail@ponytail": true,
-    "svelte@svelte": true,
-    "mattpocock-skills@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "diagram-design@diagram-design": true,
-    "impeccable@impeccable": true,
-    "automem@verygoodplugins-mcp-automem": true
-  },
-  "extraKnownMarketplaces": {
-    "ponytail": {
-      "source": {
-        "source": "github",
-        "repo": "DietrichGebert/ponytail"
-      },
-      "autoUpdate": true
-    },
-    "svelte": {
-      "source": {
-        "source": "github",
-        "repo": "sveltejs/ai-tools"
-      },
-      "autoUpdate": true
-    },
-    "diagram-design": {
-      "source": {
-        "source": "github",
-        "repo": "cathrynlavery/diagram-design"
-      },
-      "autoUpdate": true
-    },
-    "impeccable": {
-      "source": {
-        "source": "github",
-        "repo": "pbakaus/impeccable"
-      },
-      "autoUpdate": true
-    },
-    "verygoodplugins-mcp-automem": {
-      "source": {
-        "source": "github",
-        "repo": "verygoodplugins/mcp-automem"
-      },
-      "autoUpdate": true
-    }
-  },
-  "language": "Bahasa Indonesia",
-  "feedbackDrafts": "off",
-  "alwaysThinkingEnabled": false,
+  "autoCompactEnabled": false,
+  "autoContinueAtUsageLimit": false,
+  "autoMemoryEnabled": false,
   "awaySummaryEnabled": false,
   "dialogExpiry": "never",
-  "tui": "fullscreen",
-  "timeFormat": "24-hour",
-  "autoMemoryEnabled": false,
-  "theme": "dark",
   "editorMode": "normal",
-  "verbose": true,
-  "autoCompactEnabled": false,
-  "switchModelsOnFlag": false,
-  "autoContinueAtUsageLimit": false,
+  "enableArtifact": false,
+  "enableWorkflows": false,
+  "enabledPlugins": {
+    "automem@verygoodplugins-mcp-automem": true,
+    "diagram-design@diagram-design": true,
+    "impeccable@impeccable": true,
+    "mattpocock-skills@claude-plugins-official": true,
+    "ponytail@ponytail": true,
+    "svelte@svelte": true,
+    "typescript-lsp@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "diagram-design": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "cathrynlavery/diagram-design",
+        "source": "github"
+      }
+    },
+    "impeccable": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "pbakaus/impeccable",
+        "source": "github"
+      }
+    },
+    "ponytail": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "DietrichGebert/ponytail",
+        "source": "github"
+      }
+    },
+    "svelte": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "sveltejs/ai-tools",
+        "source": "github"
+      }
+    },
+    "verygoodplugins-mcp-automem": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "verygoodplugins/mcp-automem",
+        "source": "github"
+      }
+    }
+  },
+  "feedbackDrafts": "off",
+  "language": "Bahasa Indonesia",
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true
+  "statusLine": {
+    "command": "bash \"$HOME/.claude/statusline-command.sh\"",
+    "type": "command"
+  },
+  "switchModelsOnFlag": false,
+  "theme": "dark",
+  "timeFormat": "24-hour",
+  "tui": "fullscreen",
+  "verbose": true,
+  "workflowKeywordTriggerEnabled": false
 }
