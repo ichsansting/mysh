@@ -3,6 +3,9 @@
     "commit": "",
     "sessionUrl": false
   },
+  "enableArtifact": false,
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
@@ -43,11 +46,18 @@
   },
   "language": "Bahasa Indonesia",
   "feedbackDrafts": "off",
+  "alwaysThinkingEnabled": false,
+  "awaySummaryEnabled": false,
+  "dialogExpiry": "never",
   "tui": "fullscreen",
+  "timeFormat": "24-hour",
   "autoMemoryEnabled": false,
   "theme": "dark",
   "editorMode": "normal",
+  "verbose": true,
   "autoCompactEnabled": false,
+  "switchModelsOnFlag": false,
+  "autoContinueAtUsageLimit": false,
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": true
 }
