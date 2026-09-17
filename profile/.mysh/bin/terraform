@@ -30,4 +30,4 @@ if not set -q TF_ASSUME_WRAPPED
     end
 end
 
-exec mise x terraform@"$(tf-version-name)" -- terraform $argv
+exec mise x terraform@"$(terraform-version-name)" -- terraform $argv
