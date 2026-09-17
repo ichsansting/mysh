@@ -113,6 +113,8 @@ function aws-lambda-invoke
         end
         # 2d. save the cleaned payload so the next edit reopens it, header-free
         echo $payload >$payload_file
+        # rerun should replay this saved payload without reopening the editor
+        set argv[2] -
     end
 
     # 3. print a copy-pasteable command to repeat this exact invocation
