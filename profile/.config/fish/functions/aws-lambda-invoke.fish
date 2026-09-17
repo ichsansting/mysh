@@ -38,7 +38,7 @@ function aws-lambda-invoke
             echo "invoke cancelled" >&2
             return 1
         end
-        set payload (cat $payload_file | string match -v -r '^\s*//' | string collect)
+        set payload (grep -v '^\s*//' $payload_file | string collect)
         if not echo $payload | jq -e . >/dev/null 2>&1
             echo "payload is not valid JSON, aborting" >&2
             return 1
@@ -47,7 +47,11 @@ function aws-lambda-invoke
         echo $payload >$payload_file
     end
 
-    echo "rerun: aws-lambda-invoke $name $payload_file" >&2
+    if test -n "$argv[2]"
+        echo "rerun: aws-lambda-invoke $name $payload_file" >&2
+    else
+        echo "rerun: aws-lambda-invoke $name" >&2
+    end
     set -l out (mktemp)
     aws lambda invoke \
         --region ap-southeast-1 \
