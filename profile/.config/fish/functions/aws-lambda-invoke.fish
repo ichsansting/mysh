@@ -19,11 +19,9 @@ function aws-lambda-invoke
     else
         # stable per-function path: re-editing the same function reopens its last payload
         set payload_file /tmp/aws-lambda-invoke-$name.json
-        set -l previous
+        set -l previous '{}'
         if test -f "$payload_file"
-            set previous (cat $payload_file | string collect)
-        else
-            set previous '{}'
+            set previous (grep -v '^\s*//' $payload_file | string collect)
         end
         # the header lines are the only instructions visible once the editor takes
         # over the screen; they are stripped again before the payload is validated
