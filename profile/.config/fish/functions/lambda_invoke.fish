@@ -19,7 +19,7 @@ function lambda_invoke
         $EDITOR $draft
         set payload (cat $draft | string match -v -r '^\s*//' | string collect)
         rm -f $draft
-        if test -z (string trim -- "$payload")
+        if test -z "$(string trim -- "$payload")"
             echo "empty payload, invoke cancelled" >&2
             return 1
         end
