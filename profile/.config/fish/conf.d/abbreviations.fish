@@ -19,4 +19,5 @@ abbr -a groot 'cd (git rev-parse --show-toplevel || pwd)'
 
 # git clone -> blobless partial + sparse cone; blobs fetched lazily on demand
 abbr -a gclone --command git --position anywhere --regex '^clone$' -- 'clone --depth 1 --filter=blob:none --sparse'
+abbr -a ghclone --command gh --position anywhere --regex '^clone$' --set-cursor='%' -- 'clone % -- --depth 1 --filter=blob:none --sparse'
 abbr -a gunsparse 'git sparse-checkout disable'
