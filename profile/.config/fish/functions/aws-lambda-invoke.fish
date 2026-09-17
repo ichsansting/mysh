@@ -74,9 +74,17 @@ function aws-lambda-invoke
 
     set -l payload
     set -l payload_file $argv[2]
-    # 2. get the payload: from $argv[2] if it's a file or literal JSON string,
-    # else fall through to the interactive editor flow below
-    if test -f "$argv[2]"
+    # 2. get the payload: "-" reuses the function's saved file as-is (no
+    # editor), else $argv[2] if it's a file or literal JSON string, else
+    # fall through to the interactive editor flow below
+    if test "$argv[2]" = -
+        set payload_file /tmp/aws-lambda-invoke-$name.json
+        set payload (__aws-lambda-strip-header $payload_file)
+        if not echo $payload | jq -e . >/dev/null 2>&1
+            echo "no valid saved payload for $name, aborting" >&2
+            return 1
+        end
+    else if test -f "$argv[2]"
         set payload (cat $argv[2] | string collect)
     else if test -n "$argv[2]"
         set payload $argv[2]
