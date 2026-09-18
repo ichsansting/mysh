@@ -1,0 +1,1 @@
+typo init fish | source
