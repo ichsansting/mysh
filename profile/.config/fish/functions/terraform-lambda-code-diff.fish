@@ -59,7 +59,7 @@ function __tf_lambda_code_diff_impl --argument-names temp_dir full_diff
     set -l parsed_plan "$temp_dir/plan.json"
     set -l identity_json "$temp_dir/identity.json"
 
-    command cat >"$plan_text"
+    command tee "$plan_text"
     if test $status -ne 0
         echo 'Error: failed to read Terraform plan output.' >&2
         return 2
@@ -156,6 +156,7 @@ json.dump({"resources": resources}, sys.stdout)
         return 2
     end
 
+    echo 'Verifying AWS identity...' >&2
     if not command aws sts get-caller-identity --region "$region" --output json >"$identity_json"
         echo 'Error: the AWS identity could not be verified.' >&2
         return 2
@@ -194,6 +195,7 @@ json.dump({"resources": resources}, sys.stdout)
         or return 2
 
         set -l function_json "$resource_dir/function.json"
+        echo "[$(math $index + 1)/$resource_count] Fetching function metadata for $function_name..." >&2
         if not command aws lambda get-function \
                 --function-name "$function_name" \
                 --region "$region" \
@@ -223,6 +225,7 @@ json.dump({"resources": resources}, sys.stdout)
 
         set -l code_url (command jq -r '.Code.Location' "$function_json")
         set -l deployed_archive "$resource_dir/deployed.zip"
+        echo "[$(math $index + 1)/$resource_count] Downloading deployed archive for $function_name..." >&2
         if not command curl --fail --silent --show-error --location \
                 --proto '=https' --tlsv1.2 \
                 --output "$deployed_archive" "$code_url"
@@ -240,6 +243,7 @@ json.dump({"resources": resources}, sys.stdout)
         set -l report_json "$resource_dir/report.json"
         set -l extract "$full_diff"
 
+        echo "[$(math $index + 1)/$resource_count] Comparing archive contents for $function_name..." >&2
         if not __tf_lambda_code_diff_compare_archives \
                 "$deployed_archive" "$local_archive" "$report_json" \
                 "$resource_dir/deployed" "$resource_dir/planned" "$extract"
