@@ -12,13 +12,13 @@
   },
   "enabledPlugins": {
     "automem@verygoodplugins-mcp-automem": false,
-    "diagram-design@diagram-design": true,
-    "impeccable@impeccable": true,
+    "diagram-design@diagram-design": false,
+    "impeccable@impeccable": false,
     "mattpocock-skills@claude-plugins-official": true,
     "ponytail@ponytail": true,
-    "svelte@svelte": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "cloudflare@cloudflare": true
+    "svelte@svelte": false,
+    "typescript-lsp@claude-plugins-official": false,
+    "cloudflare@cloudflare": false
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
@@ -69,6 +69,7 @@
   "awaySummaryEnabled": false,
   "dialogExpiry": "never",
   "tui": "fullscreen",
+  "timeFormat": "24-hour",
   "autoMemoryEnabled": false,
   "theme": "dark",
   "editorMode": "normal",
@@ -77,6 +78,5 @@
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true,
-  "timeFormat": "24-hour"
+  "agentPushNotifEnabled": true
 }
