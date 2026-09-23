@@ -92,7 +92,7 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
     )
 
     if type -q bat
-        printf '%s\n' $rendered | bat --language hcl --paging always --style plain
+        printf '%s\n' $rendered | bat --language hcl --paging auto --style plain
     else
         printf '%s\n' $rendered
     end
