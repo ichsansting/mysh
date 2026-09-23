@@ -69,7 +69,6 @@
   "awaySummaryEnabled": false,
   "dialogExpiry": "never",
   "tui": "fullscreen",
-  "timeFormat": "24-hour",
   "autoMemoryEnabled": false,
   "theme": "dark",
   "editorMode": "normal",
@@ -78,5 +77,6 @@
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "timeFormat": "24-hour"
 }
