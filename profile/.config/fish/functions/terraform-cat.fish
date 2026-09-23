@@ -83,6 +83,10 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
             for i in (seq (count $refs))
                 set line (string replace --all --regex "\b"(string escape --style=regex -- $refs[$i])"\b" "$resolved[$i]" -- "$line")
             end
+            # A substituted reference inside string interpolation, e.g.
+            # "prefix-${var.x}", becomes "prefix-${"value"}" — collapse the
+            # now-redundant ${"..."} wrapper into the surrounding string literal.
+            set line (string replace --all --regex '\$\{"([^"]*)"\}' '$1' -- "$line")
             echo $line
         end < $file
     )
