@@ -70,18 +70,34 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
     set -l refs
     set -l resolved
     if test (count $valid_refs) -gt 0
-        set -l batch_expr "[" (string join ', ' $valid_refs) "]"
+        # jsonencode() each value so the batch result is one JSON-escaped line per
+        # ref (no literal newlines from values like rendered container_definitions,
+        # which would otherwise desync the line-per-array-element assumption below).
+        set -l wrapped
+        for ref in $valid_refs
+            set -a wrapped "jsonencode($ref)"
+        end
+        set -l batch_expr "[" (string join ', ' $wrapped) "]"
         set -l batch_out (echo (string join '' $batch_expr) | terraform console 2>/dev/null)
         if test (count $batch_out) -gt 2
             set refs $valid_refs
-            set resolved (string trim -c ', ' -- $batch_out[2..-2])
+            set resolved
+            for line in (string trim -c ', ' -- $batch_out[2..-2])
+                set -a resolved (string unescape --style=script -- $line)
+            end
         end
     end
 
     set -l rendered (
         while read -l line
             for i in (seq (count $refs))
-                set line (string replace --all --regex "\b"(string escape --style=regex -- $refs[$i])"\b" "$resolved[$i]" -- "$line")
+                # Backslashes in the replacement are regex-replacement escapes to
+                # `string replace --regex` (e.g. a literal "\n" becomes a real
+                # newline), so double them first to keep the substituted value byte-
+                # for-byte literal — otherwise multi-line resolved values (like
+                # rendered container_definitions) would blow up the single line.
+                set -l safe_value (string replace --all '\\' '\\\\' -- "$resolved[$i]")
+                set line (string replace --all --regex "\b"(string escape --style=regex -- $refs[$i])"\b" "$safe_value" -- "$line")
             end
             # A substituted reference inside string interpolation, e.g.
             # "prefix-${var.x}", becomes "prefix-${"value"}" — collapse the
