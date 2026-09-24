@@ -43,6 +43,7 @@ Only an explicit user instruction may override a global maintainability rule. Te
 - Commit directly to the active branch, including `main` or `master`. Do not create or switch branches merely because it is the default branch.
 - Prefer the smallest commit that leaves the repository valid. Do not accumulate independently valid changes into a large commit, commit broken states, or split tightly coupled changes.
 - Inspect the intended diff first. Never stage or commit unrelated pre-existing changes.
+- Write every commit message with the `caveman-commit` skill, including commits made by subagents.
 - If an explicit repository workflow requires one large, squashed, or batched commit, tell the user before deviating from the small-commit default.
 - The active agent may commit directly. A subagent may perform the entire commit operation when delegation enables parallel work.
 - Never push without explicit user approval.
