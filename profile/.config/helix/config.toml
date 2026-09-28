@@ -23,3 +23,8 @@ right = ["diagnostics", "selections", "position", "file-encoding"]
 
 [editor.soft-wrap]
 enable = true
+
+[editor.clipboard-provider.custom]
+paste = { command = "cb", args = ["copy"] }
+yank = { command = "cb", args = ["paste"] }
+
