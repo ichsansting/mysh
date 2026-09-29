@@ -53,3 +53,9 @@ name = "python"
 language-servers = ["ty", "ruff-lsp"]
 formatter = { command = "ruff", args = ["format", "-"] }
 auto-format = true
+
+[[language]]
+name = "hcl"
+formatter = { command = "terraform", args = ["fmt", "-"] }
+auto-format = true
+
