@@ -73,7 +73,6 @@
   "autoMemoryEnabled": false,
   "theme": "dark",
   "editorMode": "normal",
-  "verbose": true,
   "autoCompactEnabled": false,
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,

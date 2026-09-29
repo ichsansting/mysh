@@ -11,6 +11,7 @@ value = "{% if tools.python is defined %}{{ tools.python.path }}{% endif %}"
 [settings]
 auto_install = true
 idiomatic_version_file_enable_tools = ["python"]
+not_found_auto_install = false
 
 [settings.pipx]
 uvx = true

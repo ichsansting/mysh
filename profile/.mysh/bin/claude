@@ -1,3 +1,3 @@
 #!/usr/bin/env fish
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
-exec mise x claude-code@latest -- claude $argv
+exec mise x claude@latest -- claude $argv
