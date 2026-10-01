@@ -88,24 +88,44 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
         end
     end
 
-    set -l rendered (
-        while read -l line
-            for i in (seq (count $refs))
-                # Backslashes in the replacement are regex-replacement escapes to
-                # `string replace --regex` (e.g. a literal "\n" becomes a real
-                # newline), so double them first to keep the substituted value byte-
-                # for-byte literal — otherwise multi-line resolved values (like
-                # rendered container_definitions) would blow up the single line.
-                set -l safe_value (string replace --all '\\' '\\\\' -- "$resolved[$i]")
-                set line (string replace --all --regex "\b"(string escape --style=regex -- $refs[$i])"\b" "$safe_value" -- "$line")
-            end
-            # A substituted reference inside string interpolation, e.g.
-            # "prefix-${var.x}", becomes "prefix-${"value"}" — collapse the
-            # now-redundant ${"..."} wrapper into the surrounding string literal.
-            set line (string replace --all --regex '\$\{"([^"]*)"\}' '$1' -- "$line")
-            echo $line
-        end < $file
-    )
+    set -l rendered
+    if test (count $refs) -gt 0
+        # Single-pass substitution: scan each line for identifier-like tokens
+        # ([A-Za-z0-9_.]+) and replace only the ones that are an exact match in
+        # the ref table, appending to an output buffer that is never re-scanned.
+        # This is what makes it single-pass — a resolved value that happens to
+        # contain another ref's name can't trigger a second, unwanted
+        # substitution the way sequential `string replace` calls did.
+        set -l refs_joined (string join \x1f -- $refs)
+        set -l vals_joined (string join \x1f -- $resolved)
+
+        set rendered (awk -v refs_joined="$refs_joined" -v vals_joined="$vals_joined" '
+            BEGIN {
+                n = split(refs_joined, refs, "\x1f")
+                split(vals_joined, vals, "\x1f")
+                for (i = 1; i <= n; i++) table[refs[i]] = vals[i]
+            }
+            {
+                rest = $0; out = ""
+                while (match(rest, /[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]+\])+/) > 0) {
+                    tok = substr(rest, RSTART, RLENGTH)
+                    out = out substr(rest, 1, RSTART - 1)
+                    out = out ((tok in table) ? table[tok] : tok)
+                    rest = substr(rest, RSTART + RLENGTH)
+                }
+                out = out rest
+                while ((pos = index(out, "${\"")) > 0) {
+                    close_pos = index(substr(out, pos), "\"}")
+                    if (close_pos == 0) break
+                    inner = substr(out, pos + 3, close_pos - 4)
+                    out = substr(out, 1, pos - 1) inner substr(out, pos + close_pos + 1)
+                }
+                print out
+            }
+        ' $file)
+    else
+        set rendered (cat $file)
+    end
 
     if type -q bat
         printf '%s\n' $rendered | bat --language hcl --paging auto --style plain
