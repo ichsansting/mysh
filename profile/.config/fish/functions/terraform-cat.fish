@@ -70,20 +70,24 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
     set -l refs
     set -l resolved
     if test (count $valid_refs) -gt 0
-        # jsonencode() each value so the batch result is one JSON-escaped line per
-        # ref (no literal newlines from values like rendered container_definitions,
-        # which would otherwise desync the line-per-array-element assumption below).
-        set -l wrapped
-        for ref in $valid_refs
-            set -a wrapped "jsonencode($ref)"
-        end
-        set -l batch_expr "[" (string join ', ' $wrapped) "]"
-        set -l batch_out (echo (string join '' $batch_expr) | terraform console 2>/dev/null)
-        if test (count $batch_out) -gt 2
-            set refs $valid_refs
-            set resolved
-            for line in (string trim -c ', ' -- $batch_out[2..-2])
-                set -a resolved (string unescape --style=script -- $line)
+        # One terraform console call per ref, not a single batched array: a
+        # single unknown value (e.g. an unset var with no default) makes an
+        # entire HCL list expression unknown, which previously desynced the
+        # line-per-array-element parsing for every other ref in the batch —
+        # and a resolved value containing a literal newline (e.g. a rendered
+        # container_definitions JSON blob) would split into multiple fish
+        # array elements via command substitution, shifting every index after
+        # it. Querying refs individually sidesteps both failure modes.
+        set refs $valid_refs
+        for ref in $refs
+            set -l out (echo "jsonencode($ref)" | terraform console 2>/dev/null | string collect)
+            if string match -q '*known after apply*' -- $out
+                set -a resolved "(known after apply)"
+            else
+                # string collect keeps a multiline unescaped value as one
+                # element — without it, fish's command substitution would
+                # split on the literal newlines and shift every later index.
+                set -a resolved (string unescape --style=script -- $out | string collect)
             end
         end
     end
@@ -96,8 +100,13 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
         # This is what makes it single-pass — a resolved value that happens to
         # contain another ref's name can't trigger a second, unwanted
         # substitution the way sequential `string replace` calls did.
-        set -l refs_joined (string join \x1f -- $refs)
-        set -l vals_joined (string join \x1f -- $resolved)
+        # string collect after each join prevents fish's command substitution
+        # from re-splitting on a literal newline inside a multiline resolved
+        # value (e.g. a rendered container_definitions JSON blob) — without
+        # it, that single joined string would come back as multiple fish
+        # array elements and desync the "\x1f"-delimited awk split below.
+        set -l refs_joined (string join \x1f -- $refs | string collect)
+        set -l vals_joined (string join \x1f -- $resolved | string collect)
 
         set rendered (awk -v refs_joined="$refs_joined" -v vals_joined="$vals_joined" '
             BEGIN {
