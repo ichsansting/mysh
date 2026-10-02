@@ -1,3 +1,21 @@
+function __aws-ecs-exec-task-age
+    set -l started_at (date -d "$argv[1]" +%s 2>/dev/null)
+    if test $status -ne 0
+        echo unknown
+        return
+    end
+    set -l elapsed (math --scale=0 "max(0, $argv[2] - $started_at)")
+    if test $elapsed -lt 60
+        printf '%ss\n' $elapsed
+    else if test $elapsed -lt 3600
+        printf '%sm\n' (math --scale=0 "$elapsed / 60")
+    else if test $elapsed -lt 86400
+        printf '%sh %sm\n' (math --scale=0 "$elapsed / 3600") (math --scale=0 "floor($elapsed / 60) % 60")
+    else
+        printf '%sd %sh\n' (math --scale=0 "$elapsed / 86400") (math --scale=0 "floor($elapsed / 3600) % 24")
+    end
+end
+
 # Pick a cluster, service, task and container; optionally pass a command instead of /bin/sh.
 function aws-ecs-exec
     set -l exec_command /bin/sh
@@ -42,8 +60,14 @@ function aws-ecs-exec
         echo 'No ECS task details found for the selected service.' >&2
         return 1
     end
+    set -l now (date +%s) || return
+    for row_index in (seq (count $task_rows))
+        set -l fields (string split \t -- "$task_rows[$row_index]")
+        set fields[4] (__aws-ecs-exec-task-age "$fields[4]" $now)
+        set task_rows[$row_index] (string join \t -- $fields)
+    end
     set -l task_row (printf '%s\n' $task_rows | string replace -r '^[^\t]*/' '' | \
-        fzf --prompt='task> ' --header="TASK ID | STATUS | HEALTH | STARTED AT | ECS EXEC") || return
+        fzf --prompt='task> ' --header="TASK ID | STATUS | HEALTH | ELAPSED | ECS EXEC") || return
     set -l task_fields (string split \t -- "$task_row")
     set -l task $task_fields[1]
     if test "$task_fields[2]" != RUNNING
