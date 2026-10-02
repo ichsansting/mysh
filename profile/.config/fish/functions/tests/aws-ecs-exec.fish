@@ -37,13 +37,13 @@ function aws
             set -l tasks_index (contains -i -- --tasks $argv)
             set -l region_index (contains -i -- --region $argv)
             test (math $region_index - $tasks_index - 1) -le 100; or return 99
-            printf 'arn:aws:ecs:region:account:task/cluster-chosen/task-other\tRUNNING\tUNKNOWN\t2026-10-01T10:00:00+00:00\tFalse\n'
+            printf 'arn:aws:ecs:region:account:task/cluster-chosen/task-other\tRUNNING\t2026-10-01T10:00:00+00:00\tFalse\n'
             set -l chosen_status RUNNING
             set -l chosen_exec True
             test "$scenario" = stopped; and set chosen_status STOPPED
             test "$scenario" = disabled; and set chosen_exec False
             if contains -- arn:aws:ecs:region:account:task/cluster-chosen/task-chosen $argv
-                printf 'arn:aws:ecs:region:account:task/cluster-chosen/task-chosen\t%s\tHEALTHY\t2026-10-02T10:00:00+00:00\t%s\n' $chosen_status $chosen_exec
+                printf 'arn:aws:ecs:region:account:task/cluster-chosen/task-chosen\t%s\t2026-10-02T10:00:00+00:00\t%s\n' $chosen_status $chosen_exec
             end
         case execute-command
             set -g exec_args $argv
@@ -58,7 +58,7 @@ function fzf
     test "$cancel_at" = "$picker_calls"; and return 130
     read --local --null picker_input
     if test $picker_calls -eq 3
-        string match -rq 'task-chosen\t(RUNNING|STOPPED)\tHEALTHY\t2h 0m\t(True|False)' -- "$picker_input"; or return 99
+        string match -rq 'task-chosen\t(RUNNING|STOPPED)\t2h 0m\t(True|False)' -- "$picker_input"; or return 99
         string match -q '*arn:aws*' -- "$picker_input"; and return 99
     end
     printf '%s\n' "$picker_input" | command fzf --filter=chosen $argv

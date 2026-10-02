@@ -51,7 +51,7 @@ function aws-ecs-exec
     while test (count $task_arns) -gt 0
         set -l batch_rows (aws ecs describe-tasks --cluster "$cluster" --tasks $task_arns[1..100] \
             --region ap-southeast-1 \
-            --query 'tasks[].[taskArn,lastStatus,healthStatus,startedAt,enableExecuteCommand]' \
+            --query 'tasks[].[taskArn,lastStatus,startedAt,enableExecuteCommand]' \
             --output text) || return
         set -a task_rows $batch_rows
         set -e task_arns[1..100]
@@ -63,18 +63,18 @@ function aws-ecs-exec
     set -l now (date +%s) || return
     for row_index in (seq (count $task_rows))
         set -l fields (string split \t -- "$task_rows[$row_index]")
-        set fields[4] (__aws-ecs-exec-task-age "$fields[4]" $now)
+        set fields[3] (__aws-ecs-exec-task-age "$fields[3]" $now)
         set task_rows[$row_index] (string join \t -- $fields)
     end
     set -l task_row (printf '%s\n' $task_rows | string replace -r '^[^\t]*/' '' | \
-        fzf --prompt='task> ' --header="TASK ID | STATUS | HEALTH | ELAPSED | ECS EXEC") || return
+        fzf --prompt='task> ' --header="TASK ID | STATUS | ELAPSED | ECS EXEC") || return
     set -l task_fields (string split \t -- "$task_row")
     set -l task $task_fields[1]
     if test "$task_fields[2]" != RUNNING
         echo "ECS task '$task' is not running (status: $task_fields[2])." >&2
         return 1
     end
-    if test (string lower -- "$task_fields[5]") != true
+    if test (string lower -- "$task_fields[4]") != true
         echo "ECS Exec is not enabled for task '$task'." >&2
         echo 'Enable ECS Exec on the service and launch new tasks before retrying.' >&2
         return 1
