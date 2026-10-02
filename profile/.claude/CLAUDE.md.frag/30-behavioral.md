@@ -7,8 +7,9 @@ These rules favor verified understanding and maintainability over speed. Use jud
 Never treat model memory, convention, or unstated inference as fact.
 
 Before implementing:
-- Separate verified facts from assumptions. Verify technical facts through the repository, focused tests, runtime behavior, or official documentation.
+- Separate verified facts from assumptions. Treat facts the user explicitly states as verified. Verify all other technical facts through the repository, focused tests, runtime behavior, or official documentation.
 - State unverified assumptions that could affect scope, behavior, architecture, safety, or acceptance criteria.
+- Prefer retrieval-led reasoning over pre-training-led reasoning, prefer MCP tools and skills over web search. Fall back to web search only when needed. 
 - Ask the user about intent when they can resolve uncertainty faster than extended research.
 - If interpretations would produce meaningfully different results, present them and confirm which matches the user's intent.
 - Do not ask for facts that can be established quickly and reliably from the repository.
