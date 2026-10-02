@@ -20,6 +20,8 @@ args = ["start"]
 [[language]]
 name = "fish"
 language-servers = ["fish-lsp"]
+formatter = { command = "fish", args = ["-c", "fish_indent"] }
+auto-format = true
 
 [language-server.markdown-oxide]
 command = "markdown-oxide"
@@ -57,10 +59,5 @@ auto-format = true
 [[language]]
 name = "hcl"
 formatter = { command = "terraform", args = ["fmt", "-"] }
-auto-format = true
-
-[[language]]
-name = "fish"
-formatter = { command = "fish_indent" }
 auto-format = true
 
