@@ -12,13 +12,13 @@
   },
   "enabledPlugins": {
     "automem@verygoodplugins-mcp-automem": false,
-    "diagram-design@diagram-design": false,
-    "impeccable@impeccable": false,
+    "diagram-design@diagram-design": true,
+    "impeccable@impeccable": true,
     "mattpocock-skills@claude-plugins-official": true,
     "ponytail@ponytail": true,
-    "svelte@svelte": false,
-    "typescript-lsp@claude-plugins-official": false,
-    "cloudflare@cloudflare": false
+    "svelte@svelte": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "cloudflare@cloudflare": true
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
