@@ -68,7 +68,7 @@
   "alwaysThinkingEnabled": false,
   "awaySummaryEnabled": false,
   "dialogExpiry": "never",
-  "tui": "fullscreen",
+  "tui": "default",
   "timeFormat": "24-hour",
   "autoMemoryEnabled": false,
   "theme": "dark",
