@@ -1,5 +1,5 @@
 function terraform-lambda-code-diff --description 'Compare Lambda archives from Terraform plan with AWS deployment'
-    argparse 'h/help' 'f/full' -- $argv
+    argparse 'h/help' 'f/full' 's/state' -- $argv
     or return 2
 
     if set -q _flag_help
@@ -7,19 +7,22 @@ function terraform-lambda-code-diff --description 'Compare Lambda archives from 
             'Usage:' \
             '  terraform plan | terraform-lambda-code-diff' \
             '  terraform plan | terraform-lambda-code-diff --full' \
+            '  terraform-lambda-code-diff --state' \
             '' \
             'By default, show only the file change summary.' \
-            '--full shows file content differences through delta.'
+            '--full shows file content differences through delta.' \
+            '--state skips terraform plan: it reads aws_lambda_function resources from the' \
+            'Terraform state and compares their local filename archive with AWS.'
         return 0
     end
 
     if test (count $argv) -ne 0
-        echo 'Error: only the --full flag is supported.' >&2
+        echo 'Error: only the --full and --state flags are supported.' >&2
         return 2
     end
 
-    if isatty stdin
-        echo 'Error: pipe Terraform plan output through stdin.' >&2
+    if not set -q _flag_state; and isatty stdin
+        echo 'Error: pipe Terraform plan output through stdin, or use --state.' >&2
         echo 'Example: terraform plan | terraform-lambda-code-diff' >&2
         return 2
     end
@@ -27,6 +30,9 @@ function terraform-lambda-code-diff --description 'Compare Lambda archives from 
     set -l required_commands aws curl jq python
     if set -q _flag_full
         set --append required_commands git delta
+    end
+    if set -q _flag_state
+        set --append required_commands terraform
     end
 
     for dependency in $required_commands
@@ -47,95 +53,29 @@ function terraform-lambda-code-diff --description 'Compare Lambda archives from 
         set full_diff 1
     end
 
-    __tf_lambda_code_diff_impl "$temp_dir" "$full_diff"
+    set -l source plan
+    if set -q _flag_state
+        set source state
+    end
+
+    __tf_lambda_code_diff_impl "$temp_dir" "$full_diff" "$source"
     set -l result $status
 
     command rm -rf -- "$temp_dir"
     return $result
 end
 
-function __tf_lambda_code_diff_impl --argument-names temp_dir full_diff
+function __tf_lambda_code_diff_impl --argument-names temp_dir full_diff source
     set -l plan_text "$temp_dir/plan.txt"
     set -l parsed_plan "$temp_dir/plan.json"
     set -l identity_json "$temp_dir/identity.json"
 
-    command tee "$plan_text"
-    if test $status -ne 0
-        echo 'Error: failed to read Terraform plan output.' >&2
-        return 2
-    end
-
-    if not test -s "$plan_text"
-        echo 'Error: Terraform plan output is empty; check Terraform errors on stderr.' >&2
-        return 2
-    end
-
-    if not command python -c '
-import json
-import re
-import sys
-from pathlib import Path
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-
-plan_complete = re.search(
-    r"(?m)^Plan:\s+\d+\s+to add,\s+\d+\s+to change,\s+\d+\s+to destroy\.\s*$",
-    text,
-)
-no_changes = re.search(r"(?m)^No changes\.\s+Your infrastructure matches the configuration\.\s*$", text)
-
-if not plan_complete and not no_changes:
-    print("The output does not contain a recognized Terraform plan terminator.", file=sys.stderr)
-    sys.exit(2)
-
-if no_changes:
-    json.dump({"resources": []}, sys.stdout)
-    sys.exit(0)
-
-header_re = re.compile(r"(?m)^\s*#\s+(.+?)\s+will be\s+.+$")
-headers = list(header_re.finditer(text))
-resources = []
-
-for index, header in enumerate(headers):
-    start = header.end()
-    end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
-    block = text[start:end]
-
-    if not re.search(r"(?m)^\s*[~+\-/]*\s*resource\s+\"aws_lambda_function\"\s+\"[^\"]+\"\s*\{", block):
-        continue
-
-    hash_change = re.search(
-        r"(?m)^\s*~\s*source_code_hash\s*=\s*\"([^\"]+)\"\s*->\s*\"([^\"]+)\"\s*$",
-        block,
-    )
-    if not hash_change:
-        if re.search(r"(?m)^\s*~\s*source_code_hash\s*=.*->", block):
-            print(f"The target hash for {header.group(1)} is unknown.", file=sys.stderr)
-            sys.exit(2)
-        continue
-
-    function_id = re.search(r"(?m)^\s*id\s*=\s*\"([^\"]+)\"\s*$", block)
-    function_name = re.search(r"(?m)^\s*function_name\s*=\s*\"([^\"]+)\"(?:\s*->.*)?$", block)
-    name = function_id.group(1) if function_id else (function_name.group(1) if function_name else None)
-    if not name:
-        print(f"The function name for {header.group(1)} was not found.", file=sys.stderr)
-        sys.exit(2)
-
-    resources.append({
-        "address": header.group(1),
-        "function_name": name,
-        "before_hash": hash_change.group(1),
-        "after_hash": hash_change.group(2),
-    })
-
-json.dump({"resources": resources}, sys.stdout)
-' "$plan_text" >"$parsed_plan"
-        set -l parser_status $status
-        if test $parser_status -ne 0
-            echo 'Error: Terraform plan output could not be verified.' >&2
-            return 2
-        end
+    if test "$source" = state
+        __tf_lambda_code_diff_parse_state "$parsed_plan"
+        or return 2
+    else
+        __tf_lambda_code_diff_parse_plan "$plan_text" "$parsed_plan"
+        or return 2
     end
 
     if not command jq -e '.resources | type == "array"' "$parsed_plan" >/dev/null
@@ -173,10 +113,14 @@ json.dump({"resources": resources}, sys.stdout)
     for index in (command seq 0 (math "$resource_count - 1"))
         set -l address (command jq -r ".resources[$index].address" "$parsed_plan")
         set -l function_name (command jq -r ".resources[$index].function_name" "$parsed_plan")
-        set -l before_hash (command jq -r ".resources[$index].before_hash" "$parsed_plan")
+        set -l before_hash (command jq -r ".resources[$index].before_hash // empty" "$parsed_plan")
         set -l after_hash (command jq -r ".resources[$index].after_hash" "$parsed_plan")
 
-        set -l local_archives (__tf_lambda_code_diff_find_archives "$after_hash")
+        set -l state_archive (command jq -r ".resources[$index].archive // empty" "$parsed_plan")
+        set -l local_archives "$state_archive"
+        if test -z "$state_archive"
+            set local_archives (__tf_lambda_code_diff_find_archives "$after_hash")
+        end
         if test $status -ne 0; or test (count $local_archives) -eq 0
             echo "Error: no local archive with the target hash was found for $address." >&2
             echo 'Run terraform plan again from the same directory.' >&2
@@ -195,7 +139,7 @@ json.dump({"resources": resources}, sys.stdout)
         or return 2
 
         set -l function_json "$resource_dir/function.json"
-        echo "[$(math $index + 1)/$resource_count] Fetching function metadata for $function_name..." >&2
+        echo "[lambda $(math $index + 1)/$resource_count, step 1/3] Fetching function metadata for $function_name..." >&2
         if not command aws lambda get-function \
                 --function-name "$function_name" \
                 --region "$region" \
@@ -216,7 +160,7 @@ json.dump({"resources": resources}, sys.stdout)
         end
 
         set -l deployed_hash (command jq -r '.Configuration.CodeSha256' "$function_json")
-        if test "$deployed_hash" != "$before_hash"
+        if test -n "$before_hash"; and test "$deployed_hash" != "$before_hash"
             echo "Error: the plan for $function_name no longer matches the AWS deployment." >&2
             printf '  Initial plan hash: %s\n' "$before_hash" >&2
             printf '  Current AWS hash : %s\n' "$deployed_hash" >&2
@@ -225,7 +169,7 @@ json.dump({"resources": resources}, sys.stdout)
 
         set -l code_url (command jq -r '.Code.Location' "$function_json")
         set -l deployed_archive "$resource_dir/deployed.zip"
-        echo "[$(math $index + 1)/$resource_count] Downloading deployed archive for $function_name..." >&2
+        echo "[lambda $(math $index + 1)/$resource_count, step 2/3] Downloading deployed archive for $function_name..." >&2
         if not command curl --fail --silent --show-error --location \
                 --proto '=https' --tlsv1.2 \
                 --output "$deployed_archive" "$code_url"
@@ -243,7 +187,7 @@ json.dump({"resources": resources}, sys.stdout)
         set -l report_json "$resource_dir/report.json"
         set -l extract "$full_diff"
 
-        echo "[$(math $index + 1)/$resource_count] Comparing archive contents for $function_name..." >&2
+        echo "[lambda $(math $index + 1)/$resource_count, step 3/3] Comparing archive contents for $function_name..." >&2
         if not __tf_lambda_code_diff_compare_archives \
                 "$deployed_archive" "$local_archive" "$report_json" \
                 "$resource_dir/deployed" "$resource_dir/planned" "$extract"
@@ -604,4 +548,139 @@ except (OSError, ValueError, zipfile.BadZipFile, RuntimeError) as error:
     raise SystemExit(1)
 ' "$deployed_archive" "$planned_archive" "$report_path" \
         "$deployed_dir" "$planned_dir" "$extract"
+end
+
+
+function __tf_lambda_code_diff_parse_plan --argument-names plan_text parsed_plan
+    command tee "$plan_text"
+    if test $status -ne 0
+        echo 'Error: failed to read Terraform plan output.' >&2
+        return 2
+    end
+
+    if not test -s "$plan_text"
+        echo 'Error: Terraform plan output is empty; check Terraform errors on stderr.' >&2
+        return 2
+    end
+
+    if not command python -c '
+import json
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+
+plan_complete = re.search(
+    r"(?m)^Plan:\s+\d+\s+to add,\s+\d+\s+to change,\s+\d+\s+to destroy\.\s*$",
+    text,
+)
+no_changes = re.search(r"(?m)^No changes\.\s+Your infrastructure matches the configuration\.\s*$", text)
+
+if not plan_complete and not no_changes:
+    print("The output does not contain a recognized Terraform plan terminator.", file=sys.stderr)
+    sys.exit(2)
+
+if no_changes:
+    json.dump({"resources": []}, sys.stdout)
+    sys.exit(0)
+
+header_re = re.compile(r"(?m)^\s*#\s+(.+?)\s+(?:will|must) be\s+.+$")
+headers = list(header_re.finditer(text))
+resources = []
+
+for index, header in enumerate(headers):
+    start = header.end()
+    end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+    block = text[start:end]
+
+    if not re.search(r"(?m)^\s*[~+\-/]*\s*resource\s+\"aws_lambda_function\"\s+\"[^\"]+\"\s*\{", block):
+        continue
+
+    hash_change = re.search(
+        r"(?m)^\s*~\s*source_code_hash\s*=\s*\"([^\"]+)\"\s*->\s*\"([^\"]+)\"\s*$",
+        block,
+    )
+    if not hash_change:
+        if re.search(r"(?m)^\s*~\s*source_code_hash\s*=.*->", block):
+            print(f"The target hash for {header.group(1)} is unknown.", file=sys.stderr)
+            sys.exit(2)
+        continue
+
+    function_id = re.search(r"(?m)^\s*id\s*=\s*\"([^\"]+)\"\s*$", block)
+    function_name = re.search(r"(?m)^\s*function_name\s*=\s*\"([^\"]+)\"(?:\s*->.*)?$", block)
+    name = function_id.group(1) if function_id else (function_name.group(1) if function_name else None)
+    if not name:
+        print(f"The function name for {header.group(1)} was not found.", file=sys.stderr)
+        sys.exit(2)
+
+    resources.append({
+        "address": header.group(1),
+        "function_name": name,
+        "before_hash": hash_change.group(1),
+        "after_hash": hash_change.group(2),
+    })
+
+json.dump({"resources": resources}, sys.stdout)
+' "$plan_text" >"$parsed_plan"
+        set -l parser_status $status
+        if test $parser_status -ne 0
+            echo 'Error: Terraform plan output could not be verified.' >&2
+            return 2
+        end
+    end
+end
+
+function __tf_lambda_code_diff_parse_state --argument-names parsed_plan
+    set -l state_json "$parsed_plan.state"
+    if not command terraform show -json >"$state_json"
+        echo 'Error: terraform show -json failed; run terraform init in this directory.' >&2
+        return 2
+    end
+
+    command python -c '
+import base64
+import hashlib
+import json
+import sys
+
+def walk(module):
+    yield from module.get("resources", [])
+    for child in module.get("child_modules", []):
+        yield from walk(child)
+
+state = json.load(open(sys.argv[1], encoding="utf-8"))
+root = state.get("values", {}).get("root_module", {})
+resources = []
+
+for resource in walk(root):
+    if resource.get("type") != "aws_lambda_function":
+        continue
+    values = resource["values"]
+    address = resource["address"]
+    archive = values.get("filename")
+    if not archive:
+        print(f"Skipped {address}: no local filename (S3 or image).", file=sys.stderr)
+        continue
+    try:
+        with open(archive, "rb") as source:
+            digest = hashlib.file_digest(source, "sha256").digest()
+    except OSError as error:
+        print(f"Local archive for {address} was not readable: {error}", file=sys.stderr)
+        sys.exit(2)
+    resources.append({
+        "address": address,
+        "function_name": values["function_name"],
+        "before_hash": None,
+        "after_hash": base64.b64encode(digest).decode("ascii"),
+        "archive": archive,
+    })
+
+json.dump({"resources": resources}, sys.stdout)
+' "$state_json" >"$parsed_plan"
+    or begin
+        echo 'Error: the Terraform state could not be read.' >&2
+        return 2
+    end
 end
