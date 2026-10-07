@@ -1,8 +1,5 @@
 {
-  "attribution": {
-    "commit": "",
-    "sessionUrl": false
-  },
+  "attribution": false,
   "enableArtifact": false,
   "enableWorkflows": false,
   "workflowKeywordTriggerEnabled": false,
