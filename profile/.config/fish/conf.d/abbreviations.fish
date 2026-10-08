@@ -16,6 +16,7 @@ abbr -a gbr 'git branch'
 abbr -a gunstage 'git reset HEAD --'
 abbr -a glast 'git log -1 HEAD'
 abbr -a groot 'cd (git rev-parse --show-toplevel || pwd)'
+abbr -a tf terraform
 
 # git clone -> blobless partial + sparse cone; blobs fetched lazily on demand
 abbr -a gclone --command git --position anywhere --regex '^clone$' -- 'clone --depth 1 --filter=blob:none --sparse'
