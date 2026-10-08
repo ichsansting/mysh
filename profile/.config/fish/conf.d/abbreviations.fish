@@ -23,3 +23,25 @@ abbr -a gclone --command git --position anywhere --regex '^clone$' -- 'clone --d
 abbr -a ghclone --command gh --position anywhere --regex '^clone$' --set-cursor='%' -- 'clone % -- --depth 1 --filter=blob:none --sparse'
 abbr -a gunsparse 'git sparse-checkout disable'
 abbr -a gfetch 'git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"'
+
+abbr -a tfplan --command terraform --position anywhere --regex '^p$' -- plan
+abbr -a tfapply --command terraform --position anywhere --regex '^a$' -- apply
+
+function __terraform_environment_abbr
+    set -l tokens (commandline --current-process --cut-at-cursor --tokens-expanded)
+    set -l environment stg
+    if test "$argv[1]" = p
+        set environment prod
+    end
+
+    switch "$tokens[2]"
+        case init
+            printf '%s\n' "-backend-config var-$environment-backend.tfvars"
+        case plan apply
+            printf '%s\n' "-var-file var-$environment.tfvars"
+        case '*'
+            return 1
+    end
+end
+
+abbr -a tfenv --command terraform --position anywhere --regex '^[sp]$' --function __terraform_environment_abbr
