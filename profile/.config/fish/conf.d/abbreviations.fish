@@ -26,6 +26,7 @@ abbr -a gfetch 'git config remote.origin.fetch "+refs/heads/*:refs/remotes/origi
 
 abbr -a tfplan --command terraform --position anywhere --regex '^p$' -- plan
 abbr -a tfapply --command terraform --position anywhere --regex '^a$' -- apply
+abbr -a tfinit --command terraform --position anywhere --regex '^i$' -- init
 
 function __terraform_environment_abbr
     set -l tokens (commandline --current-process --cut-at-cursor --tokens-expanded)

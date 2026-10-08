@@ -25,3 +25,30 @@ end
 
 bind up _atuin_up3
 bind -M insert up _atuin_up3 2>/dev/null
+
+function atuin_seed_snippets
+    command -q atuin; or return
+
+    set -l saved_commands (atuin history list --cmd-only)
+    or return 1
+
+    # Save presets without executing them.
+    for snippet_command in $atuin_snippets
+        contains -- "$snippet_command" $saved_commands; and continue
+
+        set -l history_id (ATUIN_SHELL=fish atuin history start --author-kind user -- "$snippet_command")
+        or return 1
+        if test -z "$history_id"
+            printf 'Atuin did not save preset: %s\n' "$snippet_command" >&2
+            return 1
+        end
+        atuin history end --exit 0 --duration 0 -- "$history_id"; or return 1
+        set -a saved_commands "$snippet_command"
+    end
+    return 0
+end
+
+# Wait until snippets.fish has loaded, then seed once per interactive shell.
+function __atuin_seed_snippets_on_startup --on-event fish_prompt
+    atuin_seed_snippets; and functions --erase __atuin_seed_snippets_on_startup
+end
