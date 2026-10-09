@@ -31,7 +31,8 @@ if not set -q TF_ASSUME_WRAPPED
 end
 
 set terraform_version (terraform-version-name)
-python3 -c 'import json
+python3 -c 'from functools import cache
+import json
 import os
 from pathlib import Path
 import re
@@ -39,6 +40,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from urllib.parse import parse_qs
 
 # Skip comments and heredocs so example text cannot become a module override.
 TOKENS = re.compile(
@@ -49,7 +51,7 @@ TOKENS = re.compile(
 )
 TRAVELOKA = re.compile(
     r\'^(?:git::)?(?:git@github\\.com:|ssh://git@github\\.com/|https://github\\.com/|github\\.com/)\'
-    r\'traveloka/([^/?]+)(?://([^?]*))?(?:\\?.*)?$\'
+    r\'traveloka/([^/?]+)(?://([^?]*))?(?:\\?(.*))?$\'
 )
 
 
@@ -107,6 +109,31 @@ def expand_sparse_module(directory):
         subprocess.run(["git", "-C", str(checkout), "sparse-checkout", "add", "--", str(relative_path)], check=True)
 
 
+@cache
+def ref_worktree(checkout, reference):
+    subprocess.run(["git", "-C", str(checkout), "fetch", "--no-tags", "--", "origin", reference], check=True)
+    commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "--verify", "FETCH_HEAD^{commit}"], text=True).strip()
+    branch = "tf-module-" + commit
+    existing_branch = subprocess.run(["git", "-C", str(checkout), "show-ref", "--verify", "--quiet", "refs/heads/" + branch])
+    if existing_branch.returncode not in (0, 1):
+        existing_branch.check_returncode()
+    command = ["wt", "-C", str(checkout), "switch", branch, "--no-hooks", "--no-cd", "--format=json"]
+    if existing_branch.returncode == 1:
+        command.extend(["--create", "--base", commit])
+    worktree = Path(json.loads(subprocess.check_output(command, text=True))["path"]).resolve()
+    actual_commit = subprocess.check_output(["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True).strip()
+    if actual_commit != commit:
+        raise ValueError(f"Worktree {worktree} has moved away from requested ref {reference}; expected {commit}")
+    return worktree
+
+
+def resolve_module_path(checkout, subdirectory, source):
+    module_path = (checkout / (subdirectory or "")).resolve()
+    if not module_path.is_relative_to(checkout.resolve()):
+        raise ValueError(f"Module path escapes Traveloka checkout: {source}")
+    return module_path
+
+
 def directory_overrides(directory):
     replacements = {}
     children = []
@@ -120,13 +147,15 @@ def directory_overrides(directory):
         if repository in ("", ".", ".."):
             raise ValueError(f"Invalid Traveloka repository: {source}")
         checkout = Path("/workspaces") / repository
-        module_path = (checkout / (match[2] or "")).resolve()
-        if not module_path.is_relative_to(checkout.resolve()):
-            raise ValueError(f"Module path escapes Traveloka checkout: {source}")
+        module_path = resolve_module_path(checkout, match[2], source)
         if not checkout.exists():
             print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
             subprocess.run(["gh", "repo", "clone", f"traveloka/{repository}", str(checkout),
                             "--", "--filter=blob:none", "--sparse"], check=True)
+        reference = parse_qs(match[3] or "").get("ref", [""])[0]
+        if reference:
+            checkout = ref_worktree(checkout, reference)
+            module_path = resolve_module_path(checkout, match[2], source)
         local_source = os.path.relpath(module_path, directory)
         if not local_source.startswith(("./", "../")):
             local_source = "./" + local_source
