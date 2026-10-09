@@ -30,4 +30,144 @@ if not set -q TF_ASSUME_WRAPPED
     end
 end
 
-exec mise x terraform@"$(terraform-version-name)" -- terraform $argv
+set terraform_version (terraform-version-name)
+python3 -c 'import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+
+# Skip comments and heredocs so example text cannot become a module override.
+TOKENS = re.compile(
+    r\'(?P<comment>\\#[^\\n]*|//[^\\n]*|/\\*.*?\\*/)\'
+    r\'|(?P<heredoc><<-?(?P<marker>[\\w-]+)[^\\n]*\\n.*?^\\s*(?P=marker)\\s*$)\'
+    r\'|(?P<string>"(?:\\\\.|[^"\\\\])*")\'
+    r\'|(?P<token>[\\w-]+|[^\\s])\', re.MULTILINE | re.DOTALL,
+)
+TRAVELOKA = re.compile(
+    r\'^(?:git::)?(?:git@github\\.com:|ssh://git@github\\.com/|https://github\\.com/|github\\.com/)\'
+    r\'traveloka/([^/?]+)(?://([^?]*))?(?:\\?.*)?$\'
+)
+
+
+# shortcut: literal sources only; use an HCL parser if computed sources are adopted.
+def native_module_sources(configuration):
+    modules = {}
+    tokens = [match.group() for match in TOKENS.finditer(configuration)
+              if match.lastgroup in ("string", "token")]
+    depth = 0
+    module = None
+    for index, token in enumerate(tokens):
+        if (depth == 0 and token == "module" and index + 2 < len(tokens)
+                and tokens[index + 1].startswith(\'"\') and tokens[index + 2] == "{"):
+            module = json.loads(tokens[index + 1])
+        if (depth == 1 and module and token == "source" and index + 2 < len(tokens)
+                and tokens[index + 1] == "=" and tokens[index + 2].startswith(\'"\')):
+            modules[module] = json.loads(tokens[index + 2])
+        depth += (token == "{") - (token == "}")
+        if depth == 0 and token == "}":
+            module = None
+    return modules
+
+
+def module_sources(directory):
+    modules = {}
+    filenames = sorted([*directory.glob("*.tf"), *directory.glob("*.tf.json")])
+    filenames.sort(key=lambda path: path.name in ("override.tf", "override.tf.json")
+                   or path.name.endswith(("_override.tf", "_override.tf.json")))
+    for filename in filenames:
+        configuration = filename.read_text()
+        if filename.name.endswith(".json"):
+            module_blocks = json.loads(configuration).get("module", {})
+            modules.update({name: settings["source"] for name, settings in module_blocks.items()
+                            if "source" in settings})
+            continue
+        modules.update(native_module_sources(configuration))
+    return modules
+
+
+def directory_overrides(directory):
+    replacements = {}
+    children = []
+    for name, source in module_sources(directory).items():
+        match = TRAVELOKA.fullmatch(source)
+        if not match:
+            if source.startswith(("./", "../", "/")):
+                children.append(directory / source)
+            continue
+        checkout = Path("/workspaces") / match[1].removesuffix(".git")
+        module_path = (checkout / (match[2] or "")).resolve()
+        if not module_path.is_relative_to(checkout.resolve()) or not module_path.is_dir():
+            raise ValueError(f"Missing Traveloka module checkout: {module_path} ({source})")
+        replacements[name] = {"source": str(module_path)}
+        children.append(module_path)
+    return replacements, children
+
+
+def local_overrides(root):
+    pending = [root]
+    visited = set()
+    overrides = {}
+    while pending:
+        directory = pending.pop().resolve()
+        if directory in visited:
+            continue
+        visited.add(directory)
+        replacements, children = directory_overrides(directory)
+        pending.extend(children)
+        if replacements:
+            overrides[directory] = {"module": replacements}
+    return overrides
+
+
+def main():
+    version, *arguments = sys.argv[1:]
+    root = Path.cwd()
+    command_arguments = arguments[:]
+    if command_arguments and command_arguments[0].startswith("-chdir="):
+        root = (root / command_arguments.pop(0).split("=", 1)[1]).resolve()
+    command = command_arguments[0] if command_arguments else ""
+    terraform = ["mise", "x", f"terraform@{version}", "--", "terraform"]
+    configuration_commands = {"init", "get", "plan", "apply", "destroy", "validate",
+                              "console", "import", "refresh", "graph", "test", "providers"}
+    if command not in configuration_commands or any(arg in ("-help", "--help") for arg in arguments):
+        return subprocess.call(terraform + arguments)
+    overrides = local_overrides(root)
+    temporary_files = []
+    try:
+        for directory, configuration in overrides.items():
+            descriptor, filename = tempfile.mkstemp(prefix="traveloka_local_", suffix="_override.tf.json", dir=directory)
+            temporary_files.append(filename)
+            with os.fdopen(descriptor, "w") as override:
+                json.dump(configuration, override)
+            for name, settings in configuration["module"].items():
+                print(f"terraform local: {directory}: {name} -> {settings[\'source\']}", file=sys.stderr)
+        if overrides and command not in ("init", "get"):
+            chdir = arguments[:1] if arguments[0].startswith("-chdir=") else []
+            status = subprocess.call(terraform + chdir + ["init", "-input=false"])
+            if status:
+                return status
+        return subprocess.call(terraform + arguments)
+    finally:
+        for filename in temporary_files:
+            Path(filename).unlink(missing_ok=True)
+
+
+def terminate(signum, frame):
+    raise SystemExit(128 + signum)
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, terminate)
+    try:
+        sys.exit(main())
+    except (OSError, ValueError) as error:
+        print(f"terraform local: {error}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)
+' "$terraform_version" $argv
+exit $status
