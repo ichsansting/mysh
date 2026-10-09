@@ -89,6 +89,24 @@ def module_sources(directory):
     return modules
 
 
+def expand_sparse_module(directory):
+    existing_parent = directory
+    while not existing_parent.is_dir() and existing_parent != existing_parent.parent:
+        existing_parent = existing_parent.parent
+    git_root = subprocess.run(["git", "-C", str(existing_parent), "rev-parse", "--show-toplevel"],
+                              capture_output=True, text=True)
+    if git_root.returncode:
+        return
+    checkout = Path(git_root.stdout.strip()).resolve()
+    relative_path = directory.relative_to(checkout)
+    if relative_path == Path("."):
+        return
+    sparse = subprocess.run(["git", "-C", str(checkout), "config", "--bool", "core.sparseCheckout"],
+                            capture_output=True, text=True)
+    if sparse.stdout.strip() == "true":
+        subprocess.run(["git", "-C", str(checkout), "sparse-checkout", "add", "--", str(relative_path)], check=True)
+
+
 def directory_overrides(directory):
     replacements = {}
     children = []
@@ -98,11 +116,21 @@ def directory_overrides(directory):
             if source.startswith(("./", "../", "/")):
                 children.append(directory / source)
             continue
-        checkout = Path("/workspaces") / match[1].removesuffix(".git")
+        repository = match[1].removesuffix(".git")
+        if repository in ("", ".", ".."):
+            raise ValueError(f"Invalid Traveloka repository: {source}")
+        checkout = Path("/workspaces") / repository
         module_path = (checkout / (match[2] or "")).resolve()
-        if not module_path.is_relative_to(checkout.resolve()) or not module_path.is_dir():
-            raise ValueError(f"Missing Traveloka module checkout: {module_path} ({source})")
-        replacements[name] = {"source": str(module_path)}
+        if not module_path.is_relative_to(checkout.resolve()):
+            raise ValueError(f"Module path escapes Traveloka checkout: {source}")
+        if not checkout.exists():
+            print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
+            subprocess.run(["gh", "repo", "clone", f"traveloka/{repository}", str(checkout),
+                            "--", "--filter=blob:none", "--sparse"], check=True)
+        local_source = os.path.relpath(module_path, directory)
+        if not local_source.startswith(("./", "../")):
+            local_source = "./" + local_source
+        replacements[name] = {"source": local_source}
         children.append(module_path)
     return replacements, children
 
@@ -116,6 +144,9 @@ def local_overrides(root):
         if directory in visited:
             continue
         visited.add(directory)
+        expand_sparse_module(directory)
+        if not directory.is_dir():
+            raise ValueError(f"Missing local module directory: {directory}")
         replacements, children = directory_overrides(directory)
         pending.extend(children)
         if replacements:
@@ -164,6 +195,9 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, terminate)
     try:
         sys.exit(main())
+    except subprocess.CalledProcessError as error:
+        print(f"terraform local: command failed: {error}", file=sys.stderr)
+        sys.exit(error.returncode if error.returncode > 0 else 128 - error.returncode)
     except (OSError, ValueError) as error:
         print(f"terraform local: {error}", file=sys.stderr)
         sys.exit(1)
