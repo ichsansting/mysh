@@ -117,13 +117,24 @@ def ref_worktree(checkout, reference):
     existing_branch = subprocess.run(["git", "-C", str(checkout), "show-ref", "--verify", "--quiet", "refs/heads/" + branch])
     if existing_branch.returncode not in (0, 1):
         existing_branch.check_returncode()
-    command = ["wt", "-C", str(checkout), "switch", branch, "--no-hooks", "--no-cd", "--format=json"]
+    plugin_cache = Path(os.environ.get("TF_PLUGIN_CACHE_DIR", str(Path.home() / ".terraform.d/plugin-cache"))).expanduser().resolve()
+    module_cache = plugin_cache.parent / "module-cache" / checkout.name
+    module_cache.mkdir(parents=True, exist_ok=True)
+    cached_worktree = module_cache / commit
+    worktree_setting = "worktree-path=" + json.dumps(str(cached_worktree), ensure_ascii=False)
+    command = ["wt", "-C", str(checkout), "--config-set", worktree_setting,
+               "switch", branch, "--no-hooks", "--no-cd", "--format=json"]
     if existing_branch.returncode == 1:
         command.extend(["--create", "--base", commit])
     worktree = Path(json.loads(subprocess.check_output(command, text=True))["path"]).resolve()
     actual_commit = subprocess.check_output(["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True).strip()
     if actual_commit != commit:
         raise ValueError(f"Worktree {worktree} has moved away from requested ref {reference}; expected {commit}")
+    if worktree != cached_worktree:
+        if worktree == checkout.resolve():
+            raise ValueError(f"Cannot move the main checkout into the module cache: {worktree}")
+        subprocess.run(["git", "-C", str(checkout), "worktree", "move", str(worktree), str(cached_worktree)], check=True)
+        worktree = cached_worktree
     return worktree
 
 
