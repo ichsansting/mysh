@@ -1,33 +1,31 @@
 #!/usr/bin/env fish
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
-if not set -q TF_ASSUME_WRAPPED
-    set profile ""
-    for arg in $argv
-        switch $arg
-            case '*prod*.tfvars'
-                set profile "DeployerExt@tvlk-fpr-prod"
-                break
-            case '*stg*.tfvars'
-                set profile "DeployerExt@tvlk-fpr-stg"
-                break
-        end
+set environment ""
+for arg in $argv
+    switch $arg
+        case '*prod*.tfvars'
+            set environment prod
+            break
+        case '*stg*.tfvars'
+            set environment stg
+            break
     end
+end
 
-    if test -z "$profile"
-        switch $PWD
-            case '*/production/*'
-                set profile "DeployerExt@tvlk-fpr-prod"
-            case '*/staging/*'
-                set profile "DeployerExt@tvlk-fpr-stg"
-        end
+if test -z "$environment"
+    switch $PWD
+        case '*/production/*'
+            set environment prod
+        case '*/staging/*'
+            set environment stg
     end
+end
 
-    if test -n "$profile"
-        set -x TF_ASSUME_WRAPPED 1
-        assume "$profile" -x --exec "terraform $argv"
-        exit $status
-    end
+if not set -q TF_ASSUME_WRAPPED; and test -n "$environment"
+    set -x TF_ASSUME_WRAPPED 1
+    assume "DeployerExt@tvlk-fpr-$environment" -x --exec "terraform $argv"
+    exit $status
 end
 
 set terraform_version (terraform-version-name)
@@ -220,8 +218,23 @@ def modules_need_init(root):
     return visited != installed_modules.keys()
 
 
+def backend_needs_init(root, filename):
+    # shortcut: scalar backend settings only; use an HCL parser for nested settings.
+    tokens = [match.group() for match in TOKENS.finditer((root / filename).read_text())
+              if match.lastgroup in ("string", "token")]
+    if len(tokens) % 3 or any(tokens[index + 1] != "=" for index in range(0, len(tokens), 3)):
+        raise ValueError(f"Cannot compare non-scalar backend settings in {filename}; run explicit init")
+    settings = {tokens[index]: json.loads(tokens[index + 2]) for index in range(0, len(tokens), 3)}
+    data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
+    try:
+        cached_backend = json.loads((data_directory / "terraform.tfstate").read_text())["backend"]["config"]
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+        return True
+    return any(cached_backend.get(key) != setting for key, setting in settings.items())
+
+
 def main():
-    version, *arguments = sys.argv[1:]
+    version, environment, *arguments = sys.argv[1:]
     root = Path.cwd()
     command_arguments = arguments[:]
     if command_arguments and command_arguments[0].startswith("-chdir="):
@@ -233,6 +246,11 @@ def main():
     uses_configuration = command in configuration_commands or command_arguments[:2] == ["state", "show"]
     if not uses_configuration or any(arg in ("-help", "--help") for arg in arguments):
         return subprocess.call(terraform + arguments)
+    backend_file = f"var-{environment}-backend.tfvars" if environment else None
+    if backend_file is not None and not (root / backend_file).is_file():
+        backend_file = None
+    backend_changed = (command not in ("init", "get") and backend_file is not None
+                       and backend_needs_init(root, backend_file))
     overrides = local_overrides(root)
     temporary_files = []
     try:
@@ -243,9 +261,12 @@ def main():
                 json.dump(configuration, override)
             for name, settings in configuration["module"].items():
                 print(f"terraform local: {directory}: {name} -> {settings[\'source\']}", file=sys.stderr)
-        if overrides and command not in ("init", "get") and modules_need_init(root):
+        if command not in ("init", "get") and ((overrides and modules_need_init(root)) or backend_changed):
             chdir = arguments[:1] if arguments[0].startswith("-chdir=") else []
-            status = subprocess.call(terraform + chdir + ["init", "-input=false"], stdout=sys.stderr)
+            init_arguments = ["init", "-input=false"]
+            if backend_file is not None:
+                init_arguments.append("-backend-config=" + backend_file)
+            status = subprocess.call(terraform + chdir + init_arguments, stdout=sys.stderr)
             if status:
                 return status
         return subprocess.call(terraform + arguments)
@@ -270,5 +291,5 @@ if __name__ == "__main__":
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)
-' "$terraform_version" $argv
+' "$terraform_version" "$environment" $argv
 exit $status
