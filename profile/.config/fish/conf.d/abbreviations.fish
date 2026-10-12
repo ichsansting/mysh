@@ -10,12 +10,13 @@ abbr -a htop btop
 abbr -a du 'dust -d1 -n 10'
 abbr -a df duf
 abbr -a diff delta
-abbr -a gst 'git status'
+abbr -a gs 'git status'
 abbr -a glg 'git log --oneline --graph --decorate --all'
-abbr -a gbr 'git branch'
-abbr -a gunstage 'git reset HEAD --'
-abbr -a glast 'git log -1 HEAD'
-abbr -a groot 'cd (git rev-parse --show-toplevel || pwd)'
+abbr -a gb 'git branch'
+abbr -a gc 'git checkout'
+abbr -a gu 'git reset HEAD --'
+abbr -a gl 'git log -1 HEAD'
+abbr -a gr 'cd (git rev-parse --show-toplevel || pwd)'
 abbr -a tf terraform
 
 # git clone -> blobless partial + sparse cone; blobs fetched lazily on demand
