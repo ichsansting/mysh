@@ -264,6 +264,19 @@ def modules_upgrade_requested(command, arguments):
     return bool(settings) and settings[-1].partition("=")[2] in ("", "true", "1", "t", "T", "TRUE", "True")
 
 
+def apply_uses_saved_plan(arguments):
+    options_with_values = {"-backup", "-invoke", "-lock-timeout", "-parallelism", "-replace",
+                           "-state", "-state-out", "-target", "-var", "-var-file"}
+    remaining = iter(arguments)
+    for argument in remaining:
+        if argument in options_with_values:
+            next(remaining, None)
+            continue
+        if not argument.startswith("-"):
+            return True
+    return False
+
+
 def main():
     version, environment, *arguments = sys.argv[1:]
     root = Path.cwd()
@@ -277,8 +290,21 @@ def main():
     uses_configuration = command in configuration_commands or command_arguments[:2] == ["state", "show"]
     if not uses_configuration or any(arg in ("-help", "--help") for arg in arguments):
         return subprocess.call(terraform + arguments)
+    if environment:
+        explicit_options = {argument.split("=", 1)[0] for argument in command_arguments[1:]}
+        default_option = None
+        if command == "init" and "-backend-config" not in explicit_options:
+            default_option = f"-backend-config=var-{environment}-backend.tfvars"
+        elif command in ("plan", "apply") and "-var-file" not in explicit_options:
+            default_option = f"-var-file=var-{environment}.tfvars"
+        # Saved plans already contain their variables.
+        if command == "apply" and apply_uses_saved_plan(command_arguments[1:]):
+            default_option = None
+        if default_option:
+            arguments.insert(2 if arguments[0].startswith("-chdir=") else 1, default_option)
     backend_file = f"var-{environment}-backend.tfvars" if environment else None
-    if backend_file is not None and not (root / backend_file).is_file():
+    if (backend_file is not None and command not in ("init", "plan", "apply")
+            and not (root / backend_file).is_file()):
         backend_file = None
     backend_changed = (command not in ("init", "get") and backend_file is not None
                        and backend_needs_init(root, backend_file))

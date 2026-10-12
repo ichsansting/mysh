@@ -1,30 +1,71 @@
 #!/usr/bin/env fish
+# Wrapper features:
+# - Environment priority: manual stg/prod file > AWS_PROFILE > directory > default stg.
+# - Manual files: inspect var-file/backend-config (=file or separate file); last matching file wins.
+# - Profiles: DeployerExt@tvlk-fpr-stg/prod; assume the target if the active profile differs.
+# - Reject unknown AWS_PROFILE unless a manual file selects stg/prod; missing required files fail.
+# - Directories: staging/stg or production/prod, including their subdirectories; -chdir does not select environment.
+# - TF_ASSUME_WRAPPED prevents recursive assumption; auto-init and the main command inherit credentials.
+# - Select Terraform version with terraform-version-name and run through mise.
+# - Use var-{environment}-backend.tfvars for init, unless backend-config is supplied.
+# - Use var-{environment}.tfvars for plan/apply, unless var-file is supplied.
+# - Apply saved plans without adding var-file; their variables are already saved.
+# - Auto-init when backend settings or overridden module sources change; stop on failure.
+# - Cache Traveloka modules as local Git worktrees, with refs pinned per TF_DATA_DIR.
+# - Refresh module refs with init -upgrade or get -update; remove temporary overrides on exit.
+# - Honor leading -chdir for Terraform files and run Python with -B (no __pycache__).
+# Checks: fish --no-execute terraform; python3 -B -m unittest -v test_terraform.py
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
-set environment ""
+set environment stg
+set argument_environment ""
+set expects_file 0
 for arg in $argv
+    set filename ""
+    if test "$expects_file" = 1
+        set filename "$arg"
+        set expects_file 0
+    end
     switch $arg
+        case '-var-file' '-backend-config'
+            set expects_file 1
+        case '-var-file=*' '-backend-config=*'
+            set filename (string split --max 1 '=' -- "$arg")[2]
+    end
+    switch "$filename"
         case '*prod*.tfvars'
-            set environment prod
-            break
+            set argument_environment prod
         case '*stg*.tfvars'
-            set environment stg
-            break
+            set argument_environment stg
     end
 end
 
-if test -z "$environment"
-    switch $PWD
-        case '*/production/*'
+if test -n "$argument_environment"
+    set environment "$argument_environment"
+else if test -n "$AWS_PROFILE"
+    switch $AWS_PROFILE
+        case 'DeployerExt@tvlk-fpr-prod'
             set environment prod
-        case '*/staging/*'
+        case 'DeployerExt@tvlk-fpr-stg'
+            set environment stg
+        case '*'
+            echo "terraform: unsupported AWS_PROFILE: $AWS_PROFILE" >&2
+            exit 1
+    end
+else
+    switch $PWD
+        case '*/production' '*/production/*' '*/prod' '*/prod/*'
+            set environment prod
+        case '*/staging' '*/staging/*' '*/stg' '*/stg/*'
             set environment stg
     end
 end
 
-if not set -q TF_ASSUME_WRAPPED; and test -n "$environment"
+set target_profile "DeployerExt@tvlk-fpr-$environment"
+if not set -q TF_ASSUME_WRAPPED; and test "$AWS_PROFILE" != "$target_profile"
     set -x TF_ASSUME_WRAPPED 1
-    assume "DeployerExt@tvlk-fpr-$environment" -x --exec "terraform $argv"
+    set terraform_command (string join ' ' -- terraform (string escape -- $argv))
+    assume "$target_profile" -x --exec "$terraform_command"
     exit $status
 end
 
