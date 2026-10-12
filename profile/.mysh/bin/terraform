@@ -42,6 +42,8 @@ import sys
 import tempfile
 from urllib.parse import parse_qs
 
+PLUGIN_CACHE = Path(os.environ.get("TF_PLUGIN_CACHE_DIR", str(Path.home() / ".terraform.d/plugin-cache"))).expanduser().resolve()
+
 # Skip comments and heredocs so example text cannot become a module override.
 TOKENS = re.compile(
     r\'(?P<comment>\\#[^\\n]*|//[^\\n]*|/\\*.*?\\*/)\'
@@ -117,8 +119,7 @@ def ref_worktree(checkout, reference):
     existing_branch = subprocess.run(["git", "-C", str(checkout), "show-ref", "--verify", "--quiet", "refs/heads/" + branch])
     if existing_branch.returncode not in (0, 1):
         existing_branch.check_returncode()
-    plugin_cache = Path(os.environ.get("TF_PLUGIN_CACHE_DIR", str(Path.home() / ".terraform.d/plugin-cache"))).expanduser().resolve()
-    module_cache = plugin_cache.parent / "module-cache" / checkout.name
+    module_cache = checkout.parent / "refs"
     module_cache.mkdir(parents=True, exist_ok=True)
     cached_worktree = module_cache / commit
     worktree_setting = "worktree-path=" + json.dumps(str(cached_worktree), ensure_ascii=False)
@@ -157,12 +158,13 @@ def directory_overrides(directory):
         repository = match[1].removesuffix(".git")
         if repository in ("", ".", ".."):
             raise ValueError(f"Invalid Traveloka repository: {source}")
-        checkout = Path("/workspaces") / repository
+        checkout = PLUGIN_CACHE.parent / "module-cache" / repository / "checkout"
         module_path = resolve_module_path(checkout, match[2], source)
         if not checkout.exists():
+            checkout.parent.mkdir(parents=True, exist_ok=True)
             print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
             subprocess.run(["gh", "repo", "clone", f"traveloka/{repository}", str(checkout),
-                            "--", "--filter=blob:none", "--sparse"], check=True)
+                            "--", "--depth", "1", "--filter=blob:none", "--sparse"], check=True)
         reference = parse_qs(match[3] or "").get("ref", [""])[0]
         if reference:
             checkout = ref_worktree(checkout, reference)
@@ -204,7 +206,8 @@ def main():
     terraform = ["mise", "x", f"terraform@{version}", "--", "terraform"]
     configuration_commands = {"init", "get", "plan", "apply", "destroy", "validate",
                               "console", "import", "refresh", "graph", "test", "providers"}
-    if command not in configuration_commands or any(arg in ("-help", "--help") for arg in arguments):
+    uses_configuration = command in configuration_commands or command_arguments[:2] == ["state", "show"]
+    if not uses_configuration or any(arg in ("-help", "--help") for arg in arguments):
         return subprocess.call(terraform + arguments)
     overrides = local_overrides(root)
     temporary_files = []
