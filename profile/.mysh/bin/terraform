@@ -39,11 +39,9 @@ import signal
 import subprocess
 import sys
 import tempfile
-from threading import Lock
 from urllib.parse import parse_qs
 
 PLUGIN_CACHE = Path(os.environ.get("TF_PLUGIN_CACHE_DIR", str(Path.home() / ".terraform.d/plugin-cache"))).expanduser().resolve()
-REPOSITORY_LOCKS = {}
 
 # Skip comments and heredocs so example text cannot become a module override.
 TOKENS = re.compile(
@@ -158,17 +156,15 @@ def module_override(directory, source):
         raise ValueError(f"Invalid Traveloka repository: {source}")
     checkout = PLUGIN_CACHE.parent / "module-cache" / repository / "checkout"
     module_path = resolve_module_path(checkout, match[2], source)
-    # Fetches share FETCH_HEAD and worktree metadata within each repository.
-    with REPOSITORY_LOCKS.setdefault(checkout, Lock()):
-        if not checkout.exists():
-            checkout.parent.mkdir(parents=True, exist_ok=True)
-            print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
-            subprocess.run(["gh", "repo", "clone", f"traveloka/{repository}", str(checkout),
-                            "--", "--depth", "1", "--filter=blob:none", "--sparse"], check=True)
-        reference = parse_qs(match[3] or "").get("ref", [""])[0]
-        if reference:
-            checkout = ref_worktree(checkout, reference)
-            module_path = resolve_module_path(checkout, match[2], source)
+    if not checkout.exists():
+        checkout.parent.mkdir(parents=True, exist_ok=True)
+        print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
+        subprocess.run(["gh", "repo", "clone", f"traveloka/{repository}", str(checkout),
+                        "--", "--depth", "1", "--filter=blob:none", "--sparse"], check=True)
+    reference = parse_qs(match[3] or "").get("ref", [""])[0]
+    if reference:
+        checkout = ref_worktree(checkout, reference)
+        module_path = resolve_module_path(checkout, match[2], source)
     local_source = checkout.resolve().as_uri()
     subdirectory = module_path.relative_to(checkout.resolve())
     # Preserve repository ancestry for nested modules that reference ../../.
@@ -177,18 +173,33 @@ def module_override(directory, source):
     return {"source": local_source}, module_path
 
 
+def repository_overrides(directory, sources):
+    # One queue owns each repository because fetches share FETCH_HEAD and worktree metadata.
+    return {name: module_override(directory, source) for name, source in sources.items()}
+
+
 def directory_overrides(directory):
     replacements = {}
     children = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {name: executor.submit(module_override, directory, source)
-                   for name, source in module_sources(directory).items()}
-        for name, future in futures.items():
-            settings, module_path = future.result()
-            if settings is not None:
-                replacements[name] = settings
-            if module_path is not None:
-                children.append(module_path)
+    sources = module_sources(directory)
+    if not sources:
+        return replacements, children
+    queues = {}
+    for name, source in sources.items():
+        match = TRAVELOKA.fullmatch(source)
+        repository = match[1].removesuffix(".git") if match else None
+        queues.setdefault(repository, {})[name] = source
+    resolved_sources = {}
+    with ThreadPoolExecutor(max_workers=len(queues)) as executor:
+        futures = [executor.submit(repository_overrides, directory, queue) for queue in queues.values()]
+        for future in futures:
+            resolved_sources.update(future.result())
+    for name in sources:
+        settings, module_path = resolved_sources[name]
+        if settings is not None:
+            replacements[name] = settings
+        if module_path is not None:
+            children.append(module_path)
     return replacements, children
 
 
