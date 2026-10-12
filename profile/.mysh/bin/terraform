@@ -114,19 +114,22 @@ def expand_sparse_module(directory):
 def ref_worktree(checkout, reference):
     subprocess.run(["git", "-C", str(checkout), "fetch", "--no-tags", "--", "origin", reference], check=True)
     commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "--verify", "FETCH_HEAD^{commit}"], text=True).strip()
-    branch = "tf-module-" + commit
-    existing_branch = subprocess.run(["git", "-C", str(checkout), "show-ref", "--verify", "--quiet", "refs/heads/" + branch])
-    if existing_branch.returncode not in (0, 1):
-        existing_branch.check_returncode()
     module_cache = checkout.parent / "refs"
     module_cache.mkdir(parents=True, exist_ok=True)
     cached_worktree = module_cache / commit
-    worktree_setting = "worktree-path=" + json.dumps(str(cached_worktree), ensure_ascii=False)
-    command = ["wt", "-C", str(checkout), "--config-set", worktree_setting,
-               "switch", branch, "--no-hooks", "--no-cd", "--format=json"]
-    if existing_branch.returncode == 1:
-        command.extend(["--create", "--base", commit])
-    worktree = Path(json.loads(subprocess.check_output(command, text=True))["path"]).resolve()
+    if cached_worktree.is_dir():
+        worktree = cached_worktree
+    else:
+        branch = "tf-module-" + commit
+        existing_branch = subprocess.run(["git", "-C", str(checkout), "show-ref", "--verify", "--quiet", "refs/heads/" + branch])
+        if existing_branch.returncode not in (0, 1):
+            existing_branch.check_returncode()
+        worktree_setting = "worktree-path=" + json.dumps(str(cached_worktree), ensure_ascii=False)
+        command = ["wt", "-C", str(checkout), "--config-set", worktree_setting,
+                   "switch", branch, "--no-hooks", "--no-cd", "--format=json"]
+        if existing_branch.returncode == 1:
+            command.extend(["--create", "--base", commit])
+        worktree = Path(json.loads(subprocess.check_output(command, text=True))["path"]).resolve()
     actual_commit = subprocess.check_output(["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True).strip()
     if actual_commit != commit:
         raise ValueError(f"Worktree {worktree} has moved away from requested ref {reference}; expected {commit}")
