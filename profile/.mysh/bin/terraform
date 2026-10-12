@@ -29,7 +29,8 @@ if not set -q TF_ASSUME_WRAPPED; and test -n "$environment"
 end
 
 set terraform_version (terraform-version-name)
-python3 -c 'from functools import cache
+python3 -c 'from concurrent.futures import ThreadPoolExecutor
+from functools import cache
 import json
 import os
 from pathlib import Path
@@ -38,9 +39,11 @@ import signal
 import subprocess
 import sys
 import tempfile
+from threading import Lock
 from urllib.parse import parse_qs
 
 PLUGIN_CACHE = Path(os.environ.get("TF_PLUGIN_CACHE_DIR", str(Path.home() / ".terraform.d/plugin-cache"))).expanduser().resolve()
+REPOSITORY_LOCKS = {}
 
 # Skip comments and heredocs so example text cannot become a module override.
 TOKENS = re.compile(
@@ -144,20 +147,19 @@ def resolve_module_path(checkout, subdirectory, source):
     return module_path
 
 
-def directory_overrides(directory):
-    replacements = {}
-    children = []
-    for name, source in module_sources(directory).items():
-        match = TRAVELOKA.fullmatch(source)
-        if not match:
-            if source.startswith(("./", "../", "/")):
-                children.append(directory / source)
-            continue
-        repository = match[1].removesuffix(".git")
-        if repository in ("", ".", ".."):
-            raise ValueError(f"Invalid Traveloka repository: {source}")
-        checkout = PLUGIN_CACHE.parent / "module-cache" / repository / "checkout"
-        module_path = resolve_module_path(checkout, match[2], source)
+def module_override(directory, source):
+    match = TRAVELOKA.fullmatch(source)
+    if not match:
+        if source.startswith(("./", "../", "/")):
+            return None, directory / source
+        return None, None
+    repository = match[1].removesuffix(".git")
+    if repository in ("", ".", ".."):
+        raise ValueError(f"Invalid Traveloka repository: {source}")
+    checkout = PLUGIN_CACHE.parent / "module-cache" / repository / "checkout"
+    module_path = resolve_module_path(checkout, match[2], source)
+    # Fetches share FETCH_HEAD and worktree metadata within each repository.
+    with REPOSITORY_LOCKS.setdefault(checkout, Lock()):
         if not checkout.exists():
             checkout.parent.mkdir(parents=True, exist_ok=True)
             print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
@@ -167,11 +169,26 @@ def directory_overrides(directory):
         if reference:
             checkout = ref_worktree(checkout, reference)
             module_path = resolve_module_path(checkout, match[2], source)
-        local_source = os.path.relpath(module_path, directory)
-        if not local_source.startswith(("./", "../")):
-            local_source = "./" + local_source
-        replacements[name] = {"source": local_source}
-        children.append(module_path)
+    local_source = checkout.resolve().as_uri()
+    subdirectory = module_path.relative_to(checkout.resolve())
+    # Preserve repository ancestry for nested modules that reference ../../.
+    if subdirectory != Path("."):
+        local_source += "//" + subdirectory.as_posix()
+    return {"source": local_source}, module_path
+
+
+def directory_overrides(directory):
+    replacements = {}
+    children = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {name: executor.submit(module_override, directory, source)
+                   for name, source in module_sources(directory).items()}
+        for name, future in futures.items():
+            settings, module_path = future.result()
+            if settings is not None:
+                replacements[name] = settings
+            if module_path is not None:
+                children.append(module_path)
     return replacements, children
 
 
@@ -194,6 +211,12 @@ def local_overrides(root):
     return overrides
 
 
+def module_sources_match(configured, installed):
+    if configured.startswith(("./", "../", "/")):
+        return os.path.normpath(configured) == os.path.normpath(installed)
+    return configured == installed
+
+
 def modules_need_init(root):
     data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
     try:
@@ -211,7 +234,7 @@ def modules_need_init(root):
         sources = module_sources(directory)
         children = {f"{parent_key}.{name}" if parent_key else name: source
                     for name, source in sources.items()}
-        if any(key not in installed_modules or installed_modules[key]["Source"] != source
+        if any(key not in installed_modules or not module_sources_match(source, installed_modules[key]["Source"])
                for key, source in children.items()):
             return True
         pending.extend((key, (root / installed_modules[key]["Dir"]).resolve()) for key in children)
