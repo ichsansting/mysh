@@ -196,6 +196,30 @@ def local_overrides(root):
     return overrides
 
 
+def modules_need_init(root):
+    data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
+    try:
+        manifest = json.loads((data_directory / "modules/modules.json").read_text())
+        installed_modules = {module["Key"]: module for module in manifest["Modules"]}
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+        return True
+    pending = [("", root)]
+    visited = set()
+    while pending:
+        parent_key, directory = pending.pop()
+        if not directory.is_dir():
+            return True
+        visited.add(parent_key)
+        sources = module_sources(directory)
+        children = {f"{parent_key}.{name}" if parent_key else name: source
+                    for name, source in sources.items()}
+        if any(key not in installed_modules or installed_modules[key]["Source"] != source
+               for key, source in children.items()):
+            return True
+        pending.extend((key, (root / installed_modules[key]["Dir"]).resolve()) for key in children)
+    return visited != installed_modules.keys()
+
+
 def main():
     version, *arguments = sys.argv[1:]
     root = Path.cwd()
@@ -219,7 +243,7 @@ def main():
                 json.dump(configuration, override)
             for name, settings in configuration["module"].items():
                 print(f"terraform local: {directory}: {name} -> {settings[\'source\']}", file=sys.stderr)
-        if overrides and command not in ("init", "get"):
+        if overrides and command not in ("init", "get") and modules_need_init(root):
             chdir = arguments[:1] if arguments[0].startswith("-chdir=") else []
             status = subprocess.call(terraform + chdir + ["init", "-input=false"], stdout=sys.stderr)
             if status:
