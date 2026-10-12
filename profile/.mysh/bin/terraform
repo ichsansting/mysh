@@ -31,11 +31,13 @@ end
 set terraform_version (terraform-version-name)
 python3 -c 'from concurrent.futures import ThreadPoolExecutor
 from functools import cache
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -111,9 +113,13 @@ def expand_sparse_module(directory):
 
 
 @cache
-def ref_worktree(checkout, reference):
-    subprocess.run(["git", "-C", str(checkout), "fetch", "--no-tags", "--", "origin", reference], check=True)
-    commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "--verify", "FETCH_HEAD^{commit}"], text=True).strip()
+def ref_worktree(checkout, reference, cache_directory, upgrade):
+    reference_cache = cache_directory / checkout.parent.name / hashlib.sha256(reference.encode()).hexdigest()
+    if reference_cache.is_file() and not upgrade:
+        commit = reference_cache.read_text().strip()
+    else:
+        subprocess.run(["git", "-C", str(checkout), "fetch", "--no-tags", "--", "origin", reference], check=True)
+        commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "--verify", "FETCH_HEAD^{commit}"], text=True).strip()
     module_cache = checkout.parent / "refs"
     module_cache.mkdir(parents=True, exist_ok=True)
     cached_worktree = module_cache / commit
@@ -138,6 +144,14 @@ def ref_worktree(checkout, reference):
             raise ValueError(f"Cannot move the main checkout into the module cache: {worktree}")
         subprocess.run(["git", "-C", str(checkout), "worktree", "move", str(worktree), str(cached_worktree)], check=True)
         worktree = cached_worktree
+    reference_cache.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, filename = tempfile.mkstemp(dir=reference_cache.parent)
+    try:
+        with os.fdopen(descriptor, "w") as cached_reference:
+            cached_reference.write(commit)
+        os.replace(filename, reference_cache)
+    finally:
+        Path(filename).unlink(missing_ok=True)
     return worktree
 
 
@@ -148,7 +162,7 @@ def resolve_module_path(checkout, subdirectory, source):
     return module_path
 
 
-def module_override(directory, source):
+def module_override(directory, source, cache_directory, upgrade):
     match = TRAVELOKA.fullmatch(source)
     if not match:
         if source.startswith(("./", "../", "/")):
@@ -164,10 +178,9 @@ def module_override(directory, source):
         print(f"terraform local: cloning traveloka/{repository} -> {checkout}", file=sys.stderr)
         subprocess.run(["gh", "repo", "clone", f"traveloka/{repository}", str(checkout),
                         "--", "--depth", "1", "--filter=blob:none", "--sparse"], check=True)
-    reference = parse_qs(match[3] or "").get("ref", [""])[0]
-    if reference:
-        checkout = ref_worktree(checkout, reference)
-        module_path = resolve_module_path(checkout, match[2], source)
+    reference = parse_qs(match[3] or "").get("ref", ["HEAD"])[0]
+    checkout = ref_worktree(checkout, reference, cache_directory, upgrade)
+    module_path = resolve_module_path(checkout, match[2], source)
     local_source = checkout.resolve().as_uri()
     subdirectory = module_path.relative_to(checkout.resolve())
     # Preserve repository ancestry for nested modules that reference ../../.
@@ -176,12 +189,12 @@ def module_override(directory, source):
     return {"source": local_source}, module_path
 
 
-def repository_overrides(directory, sources):
+def repository_overrides(directory, sources, cache_directory, upgrade):
     # One queue owns each repository because fetches share FETCH_HEAD and worktree metadata.
-    return {name: module_override(directory, source) for name, source in sources.items()}
+    return {name: module_override(directory, source, cache_directory, upgrade) for name, source in sources.items()}
 
 
-def directory_overrides(directory):
+def directory_overrides(directory, cache_directory, upgrade):
     replacements = {}
     children = []
     sources = module_sources(directory)
@@ -194,7 +207,7 @@ def directory_overrides(directory):
         queues.setdefault(repository, {})[name] = source
     resolved_sources = {}
     with ThreadPoolExecutor(max_workers=len(queues)) as executor:
-        futures = [executor.submit(repository_overrides, directory, queue) for queue in queues.values()]
+        futures = [executor.submit(repository_overrides, directory, queue, cache_directory, upgrade) for queue in queues.values()]
         for future in futures:
             resolved_sources.update(future.result())
     for name in sources:
@@ -206,7 +219,9 @@ def directory_overrides(directory):
     return replacements, children
 
 
-def local_overrides(root):
+def local_overrides(root, upgrade=False):
+    # Keep each working directory on its selected commits until explicitly upgraded.
+    cache_directory = (root / (os.environ.get("TF_DATA_DIR") or ".terraform") / "traveloka-module-refs").resolve()
     pending = [root]
     visited = set()
     overrides = {}
@@ -218,7 +233,7 @@ def local_overrides(root):
         expand_sparse_module(directory)
         if not directory.is_dir():
             raise ValueError(f"Missing local module directory: {directory}")
-        replacements, children = directory_overrides(directory)
+        replacements, children = directory_overrides(directory, cache_directory, upgrade)
         pending.extend(children)
         if replacements:
             overrides[directory] = {"module": replacements}
@@ -270,6 +285,16 @@ def backend_needs_init(root, filename):
     return any(cached_backend.get(key) != setting for key, setting in settings.items())
 
 
+def modules_upgrade_requested(command, arguments):
+    flag = {"init": "-upgrade", "get": "-update"}.get(command)
+    if flag is None:
+        return False
+    options = shlex.split(os.environ.get("TF_CLI_ARGS", ""))
+    options += shlex.split(os.environ.get("TF_CLI_ARGS_" + command, "")) + arguments
+    settings = [option for option in options if option.split("=", 1)[0] == flag]
+    return bool(settings) and settings[-1].partition("=")[2] in ("", "true", "1", "t", "T", "TRUE", "True")
+
+
 def main():
     version, environment, *arguments = sys.argv[1:]
     root = Path.cwd()
@@ -288,7 +313,7 @@ def main():
         backend_file = None
     backend_changed = (command not in ("init", "get") and backend_file is not None
                        and backend_needs_init(root, backend_file))
-    overrides = local_overrides(root)
+    overrides = local_overrides(root, modules_upgrade_requested(command, command_arguments[1:]))
     temporary_files = []
     try:
         for directory, configuration in overrides.items():
