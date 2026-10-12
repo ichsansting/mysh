@@ -205,7 +205,7 @@ def main():
     command = command_arguments[0] if command_arguments else ""
     terraform = ["mise", "x", f"terraform@{version}", "--", "terraform"]
     configuration_commands = {"init", "get", "plan", "apply", "destroy", "validate",
-                              "console", "import", "refresh", "graph", "test", "providers"}
+                              "console", "import", "refresh", "graph", "test", "providers", "show"}
     uses_configuration = command in configuration_commands or command_arguments[:2] == ["state", "show"]
     if not uses_configuration or any(arg in ("-help", "--help") for arg in arguments):
         return subprocess.call(terraform + arguments)
@@ -221,7 +221,7 @@ def main():
                 print(f"terraform local: {directory}: {name} -> {settings[\'source\']}", file=sys.stderr)
         if overrides and command not in ("init", "get"):
             chdir = arguments[:1] if arguments[0].startswith("-chdir=") else []
-            status = subprocess.call(terraform + chdir + ["init", "-input=false"])
+            status = subprocess.call(terraform + chdir + ["init", "-input=false"], stdout=sys.stderr)
             if status:
                 return status
         return subprocess.call(terraform + arguments)
