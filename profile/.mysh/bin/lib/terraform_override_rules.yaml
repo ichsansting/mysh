@@ -1,0 +1,11 @@
+# Each rule matches both Terraform resource and data blocks of this type.
+rules:
+  - env: prod
+    resource: aws_kms_key
+    profile: DBAccess@tvlk-fpr-prod
+    account_id: "348767535692"
+
+  - env: prod
+    resource: aws_ssm_parameter
+    profile: DBAccess@tvlk-fpr-prod
+    account_id: "348767535692"

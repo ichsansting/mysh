@@ -2,22 +2,24 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import tempfile
 from urllib.parse import unquote, urlparse
 
 import hcl2
+import yaml
 from lark.exceptions import UnexpectedInput
 
-from terraform_override_rules import ALLOWED_ACCOUNT_IDS, ENVIRONMENT, PROFILE, RESOURCE_TYPES
 ALIAS = "traveloka_dbaccess"
+LEGACY_PROFILE = "DBAccess@tvlk-fpr-prod"
 GENERATED = "zzzz_traveloka_roles_override.tf.json"
 OPTIONS = hcl2.utils.SerializationOptions(
     with_comments=False, explicit_blocks=False, preserve_heredocs=False, strip_string_quotes=True,
 )
 AUTH_SETTINGS = {
-    "alias", "profile", "access_key", "secret_key", "token", "assume_role",
+    "alias", "profile", "allowed_account_ids", "access_key", "secret_key", "token", "assume_role",
     "assume_role_with_web_identity", "shared_config_files", "shared_credentials_files",
 }
 
@@ -26,15 +28,46 @@ class ModulesNotInstalled(ValueError):
     """The original module graph must be initialized before it can be copied."""
 
 
+def load_rules(filename=None):
+    filename = filename or Path(__file__).with_name("terraform_override_rules.yaml")
+    try:
+        document = yaml.safe_load(Path(filename).read_text())
+    except yaml.YAMLError:
+        raise ValueError(f"Invalid YAML in {filename}") from None
+    if not isinstance(document, dict) or set(document) != {"rules"} or not isinstance(document["rules"], list):
+        raise ValueError(f"{filename} must contain a rules list")
+    seen = set()
+    for rule in document["rules"]:
+        validate_rule(rule, filename)
+        key = (rule["env"], rule["resource"])
+        if key in seen:
+            raise ValueError(f"Duplicate override rule for {key[0]}/{key[1]} in {filename}")
+        seen.add(key)
+    return document["rules"]
+
+
+def validate_rule(rule, filename):
+    required = {"env", "resource", "profile"}
+    if not isinstance(rule, dict) or not required <= set(rule) or set(rule) - required - {"account_id"}:
+        raise ValueError(f"Each rule in {filename} requires env, resource, profile and optional account_id")
+    if any(not isinstance(rule[name], str) or not rule[name].strip() for name in required):
+        raise ValueError(f"env, resource and profile must be non-empty strings in {filename}")
+    if not re.fullmatch(r"aws_[a-z0-9_]+", rule["resource"]):
+        raise ValueError(f"Invalid AWS resource type in {filename}: {rule['resource']}")
+    if "account_id" in rule and (not isinstance(rule["account_id"], str) or not re.fullmatch(r"[0-9]{12}", rule["account_id"])):
+        raise ValueError(f"account_id must be a quoted 12-digit string in {filename}")
+
+
 def reference(expression):
     return expression[2:-1] if expression.startswith("${") and expression.endswith("}") else expression
 
 
-def routed_reference(original):
+def routed_reference(original, resource_type=None):
+    alias = "traveloka_override_" + resource_type if resource_type else ALIAS
     if original == "aws":
-        return "aws." + ALIAS
+        return "aws." + alias
     if original.startswith("aws."):
-        return "aws." + ALIAS + "_" + original[4:]
+        return "aws." + alias + "_" + original[4:]
     raise ValueError(f"Cannot route non-AWS provider {original}")
 
 
@@ -110,7 +143,7 @@ def resolve_child(root, directory, source, entry, key):
     return (root / entry["Dir"]).resolve()
 
 
-def discover_modules(root, directory, source_overrides, installed, key="", active=()):
+def discover_modules(root, directory, source_overrides, installed, rules, key="", active=()):
     directory = directory.resolve()
     if directory in active:
         raise ValueError(f"Recursive module source while generating role routing: {directory}")
@@ -123,23 +156,23 @@ def discover_modules(root, directory, source_overrides, installed, key="", activ
         override = source_overrides.get(directory, {}).get("module", {}).get(name, {})
         source = override.get("source", settings["source"])
         child = resolve_child(root, directory, source, installed.get(child_key), child_key)
-        children[name] = discover_modules(root, child, source_overrides, installed, child_key, (*active, directory))
-    needed = target_providers(configuration)
+        children[name] = discover_modules(root, child, source_overrides, installed, rules, child_key, (*active, directory))
+    needed = target_providers(configuration, rules)
     for name, child in children.items():
         mappings = configuration["module"][name].get("providers", {})
-        needed.update(reference(mappings.get(provider, provider)) for provider in child["needed"])
+        needed.update((reference(mappings.get(provider, provider)), resource_type) for provider, resource_type in child["needed"])
     if key and needed and any(provider.startswith("aws") for provider in configuration["providers"]):
         raise ValueError(f"Module {key} configures its own AWS provider; role routing requires inherited providers")
     return {"directory": directory, "configuration": configuration, "children": children, "needed": needed,
-            "source_overrides": source_overrides.get(directory, {}).get("module", {})}
+            "source_overrides": source_overrides.get(directory, {}).get("module", {}), "rules": rules}
 
 
-def target_providers(configuration):
+def target_providers(configuration, rules):
     needed = set()
     for kind in ("resource", "data"):
-        for resource_type in RESOURCE_TYPES:
+        for resource_type in rules:
             resources = configuration[kind].get(resource_type, {})
-            needed.update(reference(settings.get("provider", "aws")) for settings in resources.values())
+            needed.update((reference(settings.get("provider", "aws")), resource_type) for settings in resources.values())
     return needed
 
 
@@ -159,8 +192,9 @@ def package_root(directory, data_directory):
     return directory
 
 
-def snapshot(package, cache_directory):
+def snapshot(package, cache_directory, rules):
     digest = hashlib.sha256(str(package).encode())
+    digest.update(json.dumps(rules, sort_keys=True).encode())
     for directory, folders, filenames in os.walk(package):
         folders[:] = sorted(set(folders) - set(ignored(directory, folders)))
         for filename in sorted(set(filenames) - set(ignored(directory, filenames))):
@@ -191,7 +225,7 @@ def inherited_providers(configuration):
 def module_override(node, root, copies, data_directory, cache_directory):
     configuration = node["configuration"]
     override = {}
-    add_resource_routing(override, configuration)
+    add_resource_routing(override, configuration, node["rules"])
     child_overrides = dict(node["source_overrides"])
     for name, child in node["children"].items():
         if not child["needed"]:
@@ -200,58 +234,71 @@ def module_override(node, root, copies, data_directory, cache_directory):
         settings = configuration["module"][name]
         mappings = {name: reference(provider) for name, provider in
                     settings.get("providers", inherited_providers(child["configuration"])).items()}
-        for provider in child["needed"]:
+        for provider, resource_type in child["needed"]:
             source = reference(mappings.get(provider, provider))
-            mappings[routed_reference(provider)] = routed_reference(source)
+            mappings[routed_reference(provider, resource_type)] = routed_reference(source, resource_type)
         child_overrides[name] = {"source": child_source, "providers": mappings}
     if child_overrides:
         override["module"] = child_overrides
     if node["directory"] == root:
-        add_root_providers(override, configuration, node["needed"])
+        add_root_providers(override, configuration, node["needed"], node["rules"])
     else:
         requirements = dict(configuration["required_providers"].get("aws", {"source": "hashicorp/aws"}))
         aliases = [reference(alias) for alias in requirements.get("configuration_aliases", [])]
-        requirements["configuration_aliases"] = sorted(set(aliases) | {routed_reference(provider) for provider in node["needed"]})
+        requirements["configuration_aliases"] = sorted(set(aliases) | {routed_reference(provider, resource_type) for provider, resource_type in node["needed"]})
         override["terraform"] = {"required_providers": {"aws": requirements}}
     return override
 
 
-def add_resource_routing(override, configuration):
+def add_resource_routing(override, configuration, rules):
     for kind in ("resource", "data"):
-        declarations = resource_overrides(configuration[kind])
+        declarations = resource_overrides(configuration[kind], rules)
         if declarations:
             override[kind] = declarations
 
 
-def resource_overrides(configuration):
+def resource_overrides(configuration, rules):
     declarations = {}
-    for resource_type in RESOURCE_TYPES:
+    for resource_type in rules:
         resources = configuration.get(resource_type, {})
         if resources:
-            declarations[resource_type] = {name: {"provider": routed_reference(reference(settings.get("provider", "aws")))}
+            declarations[resource_type] = {name: {"provider": routed_reference(reference(settings.get("provider", "aws")), resource_type)}
                                            for name, settings in resources.items()}
     return declarations
 
 
-def add_root_providers(override, configuration, needed):
+def add_root_providers(override, configuration, needed, rules):
     providers = []
-    for original in sorted(needed):
-        alias = routed_reference(original)[4:]
-        if "aws." + alias in configuration["providers"]:
-            raise ValueError(f"Provider alias {alias} is reserved for generated DBAccess routing")
-        if original != "aws" and original not in configuration["providers"]:
-            raise ValueError(f"Missing original AWS provider configuration: {original}")
-        settings = configuration["providers"].get(original, {})
-        provider = {name: setting for name, setting in settings.items() if name not in AUTH_SETTINGS}
-        providers.append(dict(provider, alias=alias, profile=PROFILE, allowed_account_ids=ALLOWED_ACCOUNT_IDS))
+    for original, resource_type in sorted(needed):
+        rule = rules[resource_type]
+        alias = routed_reference(original, resource_type)[4:]
+        providers.append(generated_provider(configuration, original, alias, rule["profile"], rule.get("account_id")))
+    # Existing state may reference aliases generated before per-resource YAML rules.
+    if any(rule["profile"] == LEGACY_PROFILE for rule in rules.values()):
+        for original in sorted({provider for provider, resource_type in needed}):
+            alias = routed_reference(original)[4:]
+            providers.append(generated_provider(configuration, original, alias, LEGACY_PROFILE, "348767535692"))
     override["provider"] = {"aws": providers}
+
+
+def generated_provider(configuration, original, alias, profile, account_id):
+    if "aws." + alias in configuration["providers"]:
+        raise ValueError(f"Provider alias {alias} is reserved for generated role routing")
+    if original != "aws" and original not in configuration["providers"]:
+        raise ValueError(f"Missing original AWS provider configuration: {original}")
+    settings = configuration["providers"].get(original, {})
+    provider = {name: setting for name, setting in settings.items() if name not in AUTH_SETTINGS}
+    provider.update(alias=alias, profile=profile)
+    if account_id is not None:
+        provider["allowed_account_ids"] = [account_id]
+    return provider
 
 
 def generate_module(node, root, copies, data_directory, cache_directory):
     directory = node["directory"]
     package = package_root(directory, data_directory)
     if package not in copies:
-        copies[package] = snapshot(package, cache_directory)
+        copies[package] = snapshot(package, cache_directory, node["rules"])
     destination = copies[package] / directory.relative_to(package)
     override = module_override(node, root, copies, data_directory, cache_directory)
     descriptor, filename = tempfile.mkstemp(dir=destination, suffix=".json")
@@ -267,7 +314,8 @@ def generate_module(node, root, copies, data_directory, cache_directory):
 
 
 def configured_role_overrides(root, environment, source_overrides):
-    if environment != ENVIRONMENT:
+    rules = {rule["resource"]: rule for rule in load_rules() if rule["env"] == environment}
+    if not rules:
         return None
     root = root.resolve()
     data_directory = (root / (os.environ.get("TF_DATA_DIR") or ".terraform")).resolve()
@@ -276,8 +324,8 @@ def configured_role_overrides(root, environment, source_overrides):
         installed = {entry["Key"]: entry for entry in manifest["Modules"]}
     except FileNotFoundError:
         installed = {}
-    tree = discover_modules(root, root, source_overrides, installed)
+    tree = discover_modules(root, root, source_overrides, installed, rules)
     # Keep aliases available for destroying resources removed from configuration.
-    tree["needed"].add("aws")
-    tree["needed"].update(name for name in tree["configuration"]["providers"] if name.startswith("aws."))
+    originals = {"aws"} | {name for name in tree["configuration"]["providers"] if name.startswith("aws.")}
+    tree["needed"].update((original, resource_type) for original in originals for resource_type in rules)
     return module_override(tree, root, {}, data_directory, data_directory / "traveloka-role-modules")

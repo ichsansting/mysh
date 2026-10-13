@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
-from terraform_roles import configured_role_overrides, read_configuration
+from terraform_roles import configured_role_overrides, load_rules, read_configuration
 
 
 class RoleRoutingTest(unittest.TestCase):
@@ -47,13 +47,75 @@ data "aws_ssm_parameters_by_path" "untouched" { path = "/example" }
 
     def test_rule_environment_profile_and_types_are_configurable(self):
         self.write("main.tf", 'resource "aws_kms_alias" "alias" {}')
-        with patch.multiple("terraform_roles", ENVIRONMENT="stg", PROFILE="Other@stg",
-                            RESOURCE_TYPES={"aws_kms_alias"}, ALLOWED_ACCOUNT_IDS=["123456789012"]):
+        rules = [{"env": "stg", "resource": "aws_kms_alias", "profile": "Other@stg", "account_id": "123456789012"}]
+        with patch("terraform_roles.load_rules", return_value=rules):
             self.assertIsNone(configured_role_overrides(self.root, "prod", {}))
             routing = configured_role_overrides(self.root, "stg", {})
         self.assertEqual(set(routing["resource"]), {"aws_kms_alias"})
         self.assertEqual(routing["provider"]["aws"][0]["profile"], "Other@stg")
         self.assertEqual(routing["provider"]["aws"][0]["allowed_account_ids"], ["123456789012"])
+
+    def test_yaml_loader_and_optional_account_id(self):
+        filename = self.root / "rules.yaml"
+        filename.write_text("""rules:
+  - env: prod
+    resource: aws_kms_key
+    profile: Kms@prod
+    account_id: "123456789012"
+  - env: prod
+    resource: aws_ssm_parameter
+    profile: Ssm@prod
+""")
+        rules = load_rules(filename)
+        self.write("main.tf", 'module "child" { source = "./child" }')
+        self.write("child/main.tf", '''
+data "aws_kms_key" "lookup" { key_id = "alias/example" }
+data "aws_ssm_parameter" "lookup" { name = "example" }
+''')
+        with patch("terraform_roles.load_rules", return_value=rules):
+            routing = self.generate()
+        providers = {provider["alias"]: provider for provider in routing["provider"]["aws"]}
+        kms = providers["traveloka_override_aws_kms_key"]
+        ssm = providers["traveloka_override_aws_ssm_parameter"]
+        self.assertEqual(kms["profile"], "Kms@prod")
+        self.assertEqual(kms["allowed_account_ids"], ["123456789012"])
+        self.assertEqual(ssm["profile"], "Ssm@prod")
+        self.assertNotIn("allowed_account_ids", ssm)
+        mappings = routing["module"]["child"]["providers"]
+        self.assertEqual(mappings["aws.traveloka_override_aws_kms_key"], "aws.traveloka_override_aws_kms_key")
+        self.assertEqual(mappings["aws.traveloka_override_aws_ssm_parameter"], "aws.traveloka_override_aws_ssm_parameter")
+
+    def test_invalid_and_duplicate_yaml_rules_are_rejected(self):
+        filename = self.root / "rules.yaml"
+        valid = {"env": "prod", "resource": "aws_kms_key", "profile": "Kms@prod"}
+        invalid_documents = [
+            None, {"rules": {}}, {"rules": [None]},
+            {"rules": [{**valid, "profile": ""}]},
+            {"rules": [{**valid, "resource": "not_aws"}]},
+            {"rules": [{**valid, "account_id": 123456789012}]},
+            {"rules": [{**valid, "account_id": "123"}]},
+            {"rules": [{**valid, "account": "123456789012"}]},
+            {"rules": [valid, valid]},
+        ]
+        for document in invalid_documents:
+            with self.subTest(document=document):
+                filename.write_text(json.dumps(document))
+                with self.assertRaises(ValueError):
+                    load_rules(filename)
+        filename.write_text("rules: [")
+        with self.assertRaisesRegex(ValueError, "Invalid YAML"):
+            load_rules(filename)
+
+    def test_rule_changes_preserve_previous_module_snapshot(self):
+        self.write("main.tf", 'module "child" { source = "./child" }')
+        self.write("child/main.tf", 'data "aws_kms_key" "lookup" { key_id = "alias/example" }')
+        before = Path(urlparse(self.generate()["module"]["child"]["source"]).path)
+        original = (before / "zzzz_traveloka_roles_override.tf.json").read_text()
+        rules = [{"env": "prod", "resource": "aws_kms_key", "profile": "Different@prod"}]
+        with patch("terraform_roles.load_rules", return_value=rules):
+            after = Path(urlparse(self.generate()["module"]["child"]["source"]).path)
+        self.assertNotEqual(before, after)
+        self.assertEqual((before / "zzzz_traveloka_roles_override.tf.json").read_text(), original)
 
     def test_alias_region_endpoints_and_provider_options_are_preserved(self):
         self.write("main.tf", '''
@@ -68,9 +130,9 @@ provider "aws" {
 data "aws_kms_key" "lookup" { provider = aws.regional key_id = "alias/example" }
 ''')
         settings = next(provider for provider in self.generate()["provider"]["aws"]
-                        if provider["alias"] == "traveloka_dbaccess_regional")
+                        if provider["alias"] == "traveloka_override_aws_kms_key_regional")
         self.assertEqual(settings["region"], "${var.region}")
-        self.assertEqual(settings["alias"], "traveloka_dbaccess_regional")
+        self.assertEqual(settings["alias"], "traveloka_override_aws_kms_key_regional")
         self.assertNotIn("assume_role", settings)
         self.assertEqual(settings["default_tags"], [{"tags": {"Team": "test"}}])
         self.assertEqual(settings["endpoints"], [{"kms": "https://example.invalid"}])
@@ -92,12 +154,12 @@ module "inner" { source = "./inner" }
         mappings = routing["module"]["outer"]["providers"]
         self.assertEqual(mappings["aws"], "aws.regional")
         self.assertEqual(mappings["random"], "random")
-        self.assertEqual(mappings["aws.traveloka_dbaccess"], "aws.traveloka_dbaccess_regional")
+        self.assertEqual(mappings["aws.traveloka_override_aws_kms_key"], "aws.traveloka_override_aws_kms_key_regional")
         # Inspect generated configuration directly; the loader excludes its own file.
         generated = json.loads((outer / "zzzz_traveloka_roles_override.tf.json").read_text())
         requirements = generated["terraform"]["required_providers"]["aws"]
         self.assertEqual(requirements["version"], ">= 5")
-        self.assertEqual(requirements["configuration_aliases"], ["aws.traveloka_dbaccess"])
+        self.assertEqual(requirements["configuration_aliases"], ["aws.traveloka_override_aws_kms_key"])
         self.assertEqual(routing, self.generate())
 
     def test_cached_package_ancestry_is_preserved(self):

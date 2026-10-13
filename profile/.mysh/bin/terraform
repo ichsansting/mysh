@@ -43,11 +43,11 @@
 #   settings. For a backend file with non-scalar settings, run explicit init.
 # - Run Python with -B so it does not create bytecode files or __pycache__ directories.
 # - Role routing is opt-in with --override (consumed by the runner).
-#   Rules live in lib/terraform_override_rules.py. Affected module packages are
+#   Rules live in lib/terraform_override_rules.yaml. Affected module packages are
 #   copied per working directory; normal runs restore the original module sources.
-# - Only --override runs need uv/python-hcl2; normal runs use Python directly.
+# - Only --override runs need uv/python-hcl2/PyYAML; normal runs use Python directly.
 # Checks: fish --no-execute terraform
-# Checks: uv run --no-project --with 'python-hcl2>=8,<9' python -B -m unittest -v test_terraform.py test_terraform_roles.py
+# Checks: uv run --no-project --with 'python-hcl2>=8,<9' --with 'PyYAML>=6,<7' python -B -m unittest -v test_terraform.py test_terraform_roles.py
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
 set environment stg
@@ -112,7 +112,7 @@ end
 set terraform_version (terraform-version-name)
 set wrapper_directory (path dirname (status filename))
 if contains -- --override $argv
-    uv run --no-project --with 'python-hcl2>=8,<9' python -B "$wrapper_directory/lib/terraform_runner.py" "$terraform_version" "$environment" $argv
+    uv run --no-project --with 'python-hcl2>=8,<9' --with 'PyYAML>=6,<7' python -B "$wrapper_directory/lib/terraform_runner.py" "$terraform_version" "$environment" $argv
 else
     python3 -B "$wrapper_directory/lib/terraform_runner.py" "$terraform_version" "$environment" $argv
 end

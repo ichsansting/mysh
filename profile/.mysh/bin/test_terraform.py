@@ -167,7 +167,7 @@ class CommandRoutingTest(unittest.TestCase):
             for name, script in {
                 'assume': 'printf "%s\\n" "$@"\n',
                 'terraform-version-name': 'echo 1.0\n',
-                'uv': 'echo wrapper-uv >&2\nshift 5\nexec python3 "$@"\n',
+                'uv': 'echo wrapper-uv >&2\nshift 7\nexec python3 "$@"\n',
                 'python3': 'printf "%s\\n" "$@"\nexit 7\n',
             }.items():
                 executable = root / name

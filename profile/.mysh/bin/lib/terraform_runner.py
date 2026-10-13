@@ -362,8 +362,7 @@ def main():
                 temporary_files.append(filename)
                 with os.fdopen(descriptor, "w") as override:
                     json.dump(routing, override)
-                from terraform_override_rules import PROFILE, RESOURCE_TYPES
-                print(f"terraform roles: {environment} {', '.join(sorted(RESOURCE_TYPES))} -> {PROFILE}", file=sys.stderr)
+                print(f"terraform roles: YAML overrides enabled for {environment}", file=sys.stderr)
         if command not in ("init", "get") and (backend_changed or
                 ((overrides or routing or role_modules_installed(root)) and modules_need_init(root))):
             status = initialize(terraform, arguments, backend_file)
