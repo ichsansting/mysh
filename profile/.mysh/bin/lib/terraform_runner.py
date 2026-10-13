@@ -277,6 +277,19 @@ def apply_uses_saved_plan(arguments):
     return False
 
 
+def initialize(terraform, arguments, backend_file):
+    chdir = arguments[:1] if arguments[0].startswith("-chdir=") else []
+    init_arguments = ["init", "-input=false"]
+    if backend_file is not None:
+        init_arguments.append("-backend-config=" + backend_file)
+    return subprocess.call(terraform + chdir + init_arguments, stdout=sys.stderr)
+
+
+def role_overrides(root, environment, overrides):
+    from terraform_roles import production_role_overrides
+    return production_role_overrides(root, environment, overrides)
+
+
 def main():
     version, environment, *arguments = sys.argv[1:]
     root = Path.cwd()
@@ -310,6 +323,7 @@ def main():
                        and backend_needs_init(root, backend_file))
     overrides = local_overrides(root, modules_upgrade_requested(command, command_arguments[1:]))
     temporary_files = []
+    routing = None
     try:
         for directory, configuration in overrides.items():
             descriptor, filename = tempfile.mkstemp(prefix="traveloka_local_", suffix="_override.tf.json", dir=directory)
@@ -318,12 +332,28 @@ def main():
                 json.dump(configuration, override)
             for name, settings in configuration["module"].items():
                 print(f"terraform local: {directory}: {name} -> {settings['source']}", file=sys.stderr)
-        if command not in ("init", "get") and ((overrides and modules_need_init(root)) or backend_changed):
-            chdir = arguments[:1] if arguments[0].startswith("-chdir=") else []
-            init_arguments = ["init", "-input=false"]
-            if backend_file is not None:
-                init_arguments.append("-backend-config=" + backend_file)
-            status = subprocess.call(terraform + chdir + init_arguments, stdout=sys.stderr)
+        if environment == "prod" and command not in ("init", "get"):
+            from terraform_roles import ModulesNotInstalled
+            try:
+                routing = role_overrides(root, environment, overrides)
+            except ModulesNotInstalled:
+                status = initialize(terraform, arguments, backend_file)
+                if status:
+                    return status
+                routing = role_overrides(root, environment, overrides)
+            if routing:
+                descriptor, filename = tempfile.mkstemp(prefix="traveloka_roles_", suffix=".tf.json", dir=root)
+                temporary_files.append(filename)
+                with os.fdopen(descriptor, "w") as provider_configuration:
+                    json.dump({"provider": routing.pop("provider")}, provider_configuration)
+                descriptor, filename = tempfile.mkstemp(prefix="zzzz_traveloka_roles_", suffix="_override.tf.json", dir=root)
+                temporary_files.append(filename)
+                with os.fdopen(descriptor, "w") as override:
+                    json.dump(routing, override)
+                print("terraform roles: prod aws_kms_key/aws_ssm_parameter -> DBAccess@tvlk-fpr-prod", file=sys.stderr)
+        if command not in ("init", "get") and ((overrides and modules_need_init(root)) or backend_changed
+                                              or (routing and modules_need_init(root))):
+            status = initialize(terraform, arguments, backend_file)
             if status:
                 return status
         return subprocess.call(terraform + arguments)
