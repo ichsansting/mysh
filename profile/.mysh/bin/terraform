@@ -42,11 +42,10 @@
 # - Module scanning supports literal sources, and backend comparison supports scalar
 #   settings. For a backend file with non-scalar settings, run explicit init.
 # - Run Python with -B so it does not create bytecode files or __pycache__ directories.
-# - For prod configuration commands, route aws_kms_key and aws_ssm_parameter
-#   resources/data through DBAccess@tvlk-fpr-prod, retaining region/endpoint settings.
-#   Copy affected module packages per working directory and pass provider aliases
-#   through nested modules. Keep state/backend credentials on the original profile.
-# - Production parsing runs through uv with python-hcl2; staging needs no parser.
+# - Role routing is opt-in with --override (consumed by the runner).
+#   Rules live in lib/terraform_override_rules.py. Affected module packages are
+#   copied per working directory; normal runs restore the original module sources.
+# - Only --override runs need uv/python-hcl2; normal runs use Python directly.
 # Checks: fish --no-execute terraform
 # Checks: uv run --no-project --with 'python-hcl2>=8,<9' python -B -m unittest -v test_terraform.py test_terraform_roles.py
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
@@ -112,7 +111,7 @@ end
 
 set terraform_version (terraform-version-name)
 set wrapper_directory (path dirname (status filename))
-if test "$environment" = prod
+if contains -- --override $argv
     uv run --no-project --with 'python-hcl2>=8,<9' python -B "$wrapper_directory/lib/terraform_runner.py" "$terraform_version" "$environment" $argv
 else
     python3 -B "$wrapper_directory/lib/terraform_runner.py" "$terraform_version" "$environment" $argv

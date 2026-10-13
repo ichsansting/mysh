@@ -239,6 +239,16 @@ def modules_need_init(root):
     return visited != installed_modules.keys()
 
 
+def role_modules_installed(root):
+    data_directory = (root / (os.environ.get("TF_DATA_DIR") or ".terraform")).resolve()
+    try:
+        manifest = json.loads((data_directory / "modules/modules.json").read_text())
+        source_prefix = (data_directory / "traveloka-role-modules").as_uri() + "/"
+        return any(module["Source"].startswith(source_prefix) for module in manifest["Modules"])
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+        return False
+
+
 def backend_needs_init(root, filename):
     # shortcut: scalar backend settings only; use an HCL parser for nested settings.
     tokens = [match.group() for match in TOKENS.finditer((root / filename).read_text())
@@ -286,12 +296,14 @@ def initialize(terraform, arguments, backend_file):
 
 
 def role_overrides(root, environment, overrides):
-    from terraform_roles import production_role_overrides
-    return production_role_overrides(root, environment, overrides)
+    from terraform_roles import configured_role_overrides
+    return configured_role_overrides(root, environment, overrides)
 
 
 def main():
     version, environment, *arguments = sys.argv[1:]
+    use_role_overrides = "--override" in arguments
+    arguments = [argument for argument in arguments if argument != "--override"]
     root = Path.cwd()
     command_arguments = arguments[:]
     if command_arguments and command_arguments[0].startswith("-chdir="):
@@ -332,7 +344,7 @@ def main():
                 json.dump(configuration, override)
             for name, settings in configuration["module"].items():
                 print(f"terraform local: {directory}: {name} -> {settings['source']}", file=sys.stderr)
-        if environment == "prod" and command not in ("init", "get"):
+        if use_role_overrides:
             from terraform_roles import ModulesNotInstalled
             try:
                 routing = role_overrides(root, environment, overrides)
@@ -350,9 +362,10 @@ def main():
                 temporary_files.append(filename)
                 with os.fdopen(descriptor, "w") as override:
                     json.dump(routing, override)
-                print("terraform roles: prod aws_kms_key/aws_ssm_parameter -> DBAccess@tvlk-fpr-prod", file=sys.stderr)
-        if command not in ("init", "get") and ((overrides and modules_need_init(root)) or backend_changed
-                                              or (routing and modules_need_init(root))):
+                from terraform_override_rules import PROFILE, RESOURCE_TYPES
+                print(f"terraform roles: {environment} {', '.join(sorted(RESOURCE_TYPES))} -> {PROFILE}", file=sys.stderr)
+        if command not in ("init", "get") and (backend_changed or
+                ((overrides or routing or role_modules_installed(root)) and modules_need_init(root))):
             status = initialize(terraform, arguments, backend_file)
             if status:
                 return status

@@ -1,4 +1,4 @@
-"""Generate production DBAccess routing without editing shared module caches."""
+"""Generate configured role routing without editing shared module caches."""
 import hashlib
 import json
 import os
@@ -10,8 +10,7 @@ from urllib.parse import unquote, urlparse
 import hcl2
 from lark.exceptions import UnexpectedInput
 
-PROFILE = "DBAccess@tvlk-fpr-prod"
-RESOURCE_TYPES = {"aws_kms_key", "aws_ssm_parameter"}
+from terraform_override_rules import ALLOWED_ACCOUNT_IDS, ENVIRONMENT, PROFILE, RESOURCE_TYPES
 ALIAS = "traveloka_dbaccess"
 GENERATED = "zzzz_traveloka_roles_override.tf.json"
 OPTIONS = hcl2.utils.SerializationOptions(
@@ -244,7 +243,7 @@ def add_root_providers(override, configuration, needed):
             raise ValueError(f"Missing original AWS provider configuration: {original}")
         settings = configuration["providers"].get(original, {})
         provider = {name: setting for name, setting in settings.items() if name not in AUTH_SETTINGS}
-        providers.append(dict(provider, alias=alias, profile=PROFILE, allowed_account_ids=["348767535692"]))
+        providers.append(dict(provider, alias=alias, profile=PROFILE, allowed_account_ids=ALLOWED_ACCOUNT_IDS))
     override["provider"] = {"aws": providers}
 
 
@@ -267,8 +266,8 @@ def generate_module(node, root, copies, data_directory, cache_directory):
     return source if subdirectory == Path(".") else source + "//" + subdirectory.as_posix()
 
 
-def production_role_overrides(root, environment, source_overrides):
-    if environment != "prod":
+def configured_role_overrides(root, environment, source_overrides):
+    if environment != ENVIRONMENT:
         return None
     root = root.resolve()
     data_directory = (root / (os.environ.get("TF_DATA_DIR") or ".terraform")).resolve()

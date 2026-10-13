@@ -1,3 +1,4 @@
+import json
 import os
 import shlex
 import subprocess
@@ -56,6 +57,54 @@ class CommandRoutingTest(unittest.TestCase):
                             f'-var-file=var-{environment}.tfvars',
                         ])
                         self.assertEqual(credentials, ['assumed-profile', 'assumed-profile'])
+
+    def test_role_routing_is_opt_in_and_flag_is_consumed(self):
+        wrapper = load_wrapper()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for enabled in (False, True):
+                arguments = [f'-chdir={root}', 'plan'] + (['--override'] if enabled else [])
+                routing = Mock(return_value=None)
+                with (
+                    self.subTest(enabled=enabled),
+                    patch.dict(wrapper, {
+                        'local_overrides': Mock(return_value={}),
+                        'backend_needs_init': Mock(return_value=False),
+                        'role_overrides': routing,
+                    }),
+                    patch('sys.argv', ['terraform', '1.0', 'prod', *arguments]),
+                    patch('subprocess.call', return_value=0) as invoke,
+                ):
+                    self.assertEqual(wrapper['main'](), 0)
+                    self.assertNotIn('--override', invoke.call_args.args[0])
+                    self.assertEqual(routing.call_count, int(enabled))
+                    self.assertFalse(list(root.glob('traveloka_roles_*.tf.json')))
+
+    def test_normal_run_restores_previously_overridden_local_module(self):
+        wrapper = load_wrapper()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            child = root / 'child'
+            child.mkdir()
+            (root / 'main.tf').write_text('module "child" { source = "./child" }')
+            (child / 'main.tf').write_text('data "aws_kms_key" "key" { key_id = "alias/example" }')
+            manifest = root / '.terraform/modules/modules.json'
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({'Modules': [
+                {'Key': '', 'Source': '', 'Dir': '.'},
+                {'Key': 'child', 'Source': (root / '.terraform/traveloka-role-modules/example').as_uri(),
+                 'Dir': str(child)},
+            ]}))
+            with (
+                patch.dict(wrapper, {'backend_needs_init': Mock(return_value=False)}),
+                patch('sys.argv', ['terraform', '1.0', 'prod', f'-chdir={root}', 'plan']),
+                patch('subprocess.call', return_value=0) as invoke,
+            ):
+                self.assertEqual(wrapper['main'](), 0)
+                wrapper['role_overrides'].assert_not_called()
+                self.assertEqual(invoke.call_args_list[0].args[0][6], 'init')
+                self.assertEqual(invoke.call_args_list[1].args[0][6], 'plan')
+                self.assertFalse(list(root.glob('*roles*.tf.json')))
 
     def test_failed_auto_init_stops_requested_command(self):
         wrapper = load_wrapper()
@@ -118,7 +167,7 @@ class CommandRoutingTest(unittest.TestCase):
             for name, script in {
                 'assume': 'printf "%s\\n" "$@"\n',
                 'terraform-version-name': 'echo 1.0\n',
-                'uv': 'shift 5\nexec python3 "$@"\n',
+                'uv': 'echo wrapper-uv >&2\nshift 5\nexec python3 "$@"\n',
                 'python3': 'printf "%s\\n" "$@"\nexit 7\n',
             }.items():
                 executable = root / name
@@ -126,6 +175,8 @@ class CommandRoutingTest(unittest.TestCase):
                 executable.chmod(0o755)
             scenarios = [
                 ('project', None, None, ['plan'], 'stg'),
+                ('project', 'DeployerExt@tvlk-fpr-prod', None, ['plan', '--override'], 'prod'),
+                ('project', 'DeployerExt@tvlk-fpr-stg', None, ['plan', '--override'], 'stg'),
                 ('production/project', None, None, ['plan'], 'prod'),
                 ('staging/project', None, None, ['plan'], 'stg'),
                 ('prod', None, None, ['plan'], 'prod'),
@@ -165,6 +216,7 @@ class CommandRoutingTest(unittest.TestCase):
                     if (profile == f'DeployerExt@tvlk-fpr-{target}' or guard
                             or profile in ('unrecognized-profile', 'Developer@team-prod', 'ReadOnly@team-stg')):
                         self.assertEqual(invocation.returncode, 7, invocation.stderr)
+                        self.assertEqual('wrapper-uv' in invocation.stderr, '--override' in arguments)
                         self.assertEqual(invocation.stdout.splitlines(), [
                             '-B', str(wrapper.parent / 'lib/terraform_runner.py'), '1.0', target, *arguments,
                         ])

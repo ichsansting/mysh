@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
-from terraform_roles import production_role_overrides, read_configuration
+from terraform_roles import configured_role_overrides, read_configuration
 
 
 class RoleRoutingTest(unittest.TestCase):
@@ -27,7 +27,7 @@ class RoleRoutingTest(unittest.TestCase):
         return path.parent
 
     def generate(self):
-        return production_role_overrides(self.root, "prod", {})
+        return configured_role_overrides(self.root, "prod", {})
 
     def test_only_prod_and_exact_types_are_routed(self):
         self.write("main.tf", '''
@@ -38,12 +38,22 @@ data "aws_ssm_parameter" "lookup" { name = "example" }
 resource "aws_kms_alias" "untouched" {}
 data "aws_ssm_parameters_by_path" "untouched" { path = "/example" }
 ''')
-        self.assertIsNone(production_role_overrides(self.root, "stg", {}))
+        self.assertIsNone(configured_role_overrides(self.root, "stg", {}))
         routing = self.generate()
         for kind in ("resource", "data"):
             self.assertEqual(set(routing[kind]), {"aws_kms_key", "aws_ssm_parameter"})
         self.assertEqual(routing["provider"]["aws"][0]["profile"], "DBAccess@tvlk-fpr-prod")
         self.assertEqual(routing, self.generate())
+
+    def test_rule_environment_profile_and_types_are_configurable(self):
+        self.write("main.tf", 'resource "aws_kms_alias" "alias" {}')
+        with patch.multiple("terraform_roles", ENVIRONMENT="stg", PROFILE="Other@stg",
+                            RESOURCE_TYPES={"aws_kms_alias"}, ALLOWED_ACCOUNT_IDS=["123456789012"]):
+            self.assertIsNone(configured_role_overrides(self.root, "prod", {}))
+            routing = configured_role_overrides(self.root, "stg", {})
+        self.assertEqual(set(routing["resource"]), {"aws_kms_alias"})
+        self.assertEqual(routing["provider"]["aws"][0]["profile"], "Other@stg")
+        self.assertEqual(routing["provider"]["aws"][0]["allowed_account_ids"], ["123456789012"])
 
     def test_alias_region_endpoints_and_provider_options_are_preserved(self):
         self.write("main.tf", '''
