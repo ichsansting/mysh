@@ -12,8 +12,6 @@ import hcl2
 import yaml
 from lark.exceptions import UnexpectedInput
 
-ALIAS = "traveloka_dbaccess"
-LEGACY_PROFILE = "DBAccess@tvlk-fpr-prod"
 GENERATED = "zzzz_traveloka_roles_override.tf.json"
 OPTIONS = hcl2.utils.SerializationOptions(
     with_comments=False, explicit_blocks=False, preserve_heredocs=False, strip_string_quotes=True,
@@ -62,8 +60,8 @@ def reference(expression):
     return expression[2:-1] if expression.startswith("${") and expression.endswith("}") else expression
 
 
-def routed_reference(original, resource_type=None):
-    alias = "traveloka_override_" + resource_type if resource_type else ALIAS
+def routed_reference(original, resource_type):
+    alias = "traveloka_override_" + resource_type
     if original == "aws":
         return "aws." + alias
     if original.startswith("aws."):
@@ -273,11 +271,6 @@ def add_root_providers(override, configuration, needed, rules):
         rule = rules[resource_type]
         alias = routed_reference(original, resource_type)[4:]
         providers.append(generated_provider(configuration, original, alias, rule["profile"], rule.get("account_id")))
-    # Existing state may reference aliases generated before per-resource YAML rules.
-    if any(rule["profile"] == LEGACY_PROFILE for rule in rules.values()):
-        for original in sorted({provider for provider, resource_type in needed}):
-            alias = routed_reference(original)[4:]
-            providers.append(generated_provider(configuration, original, alias, LEGACY_PROFILE, "348767535692"))
     override["provider"] = {"aws": providers}
 
 
