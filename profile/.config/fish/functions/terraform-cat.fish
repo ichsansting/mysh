@@ -21,7 +21,7 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
     # since references commonly cross files): resource type+name, data type+name,
     # module name, variable name, local name.
     set -l declared_prefixes
-    for decl in (grep -hoE '^\s*(resource|data)\s+"[A-Za-z0-9_]+"\s+"[A-Za-z0-9_]+"|^\s*(module|variable)\s+"[A-Za-z0-9_]+"' $dir/*.tf | sort -u)
+    for decl in (grep -hoE '^\s*(resource|data)\s+"[A-Za-z0-9_-]+"\s+"[A-Za-z0-9_-]+"|^\s*(module|variable)\s+"[A-Za-z0-9_-]+"' $dir/*.tf | sort -u)
         set -l words (string split ' ' -- (string trim $decl))
         switch $words[1]
             case module
@@ -45,7 +45,7 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
             # nested block, otherwise a key like x = jsonencode({ is already
             # counted at depth 2 by the time it is tested, since its own
             # opening brace bumped depth first.
-            if (depth == 1 && /^[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*=/) {
+            if (depth == 1 && /^[ \t]*[A-Za-z_][A-Za-z0-9_-]*[ \t]*=/) {
                 line = $0
                 sub(/^[ \t]*/, "", line)
                 sub(/[ \t]*=.*/, "", line)
@@ -64,7 +64,7 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
     # stripped first so a reference mentioned only in a commented-out line (which may
     # not actually be declared) doesn't get treated as a real candidate.
     set -l code_only (string replace --regex '#.*$' '' -- (cat $file))
-    set -l candidates (string match --all --regex '\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]+\])+' -- $code_only | sort -u)
+    set -l candidates (string match --all --regex '\b[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*|\[[0-9]+\])+' -- $code_only | sort -u)
 
     set -l valid_refs
     for candidate in $candidates
@@ -139,7 +139,7 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
     set -l rendered
     if test (count $refs) -gt 0
         # Single-pass substitution: scan each line for identifier-like tokens
-        # ([A-Za-z0-9_.]+) and replace only the ones that are an exact match in
+        # ([A-Za-z0-9_.-]+) and replace only the ones that are an exact match in
         # the ref table, appending to an output buffer that is never re-scanned.
         # This is what makes it single-pass — a resolved value that happens to
         # contain another ref's name can't trigger a second, unwanted
@@ -166,7 +166,7 @@ function terraform-cat --description 'cat a .tf file with local/var/resource/mod
             NR == 2 { split($0, vals, "\x1f"); for (i = 1; i <= n; i++) table[refs[i]] = vals[i]; next }
             {
                 rest = $0; out = ""
-                while (match(rest, /[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*|\[[0-9]+\])+/) > 0) {
+                while (match(rest, /[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*|\[[0-9]+\])+/) > 0) {
                     tok = substr(rest, RSTART, RLENGTH)
                     out = out substr(rest, 1, RSTART - 1)
                     # A ref that terraform console reported as unresolved is
