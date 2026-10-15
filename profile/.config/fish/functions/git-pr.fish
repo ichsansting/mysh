@@ -13,8 +13,12 @@ function git-pr
         return 1
     end
 
-    # auto-find owner/repo from the upstream remote URL
-    set -l remote_url (git remote get-url upstream)
+    # PRs live on upstream in a fork workflow, otherwise on origin
+    set -l remote origin
+    git remote | string match -q upstream; and set remote upstream
+
+    # auto-find owner/repo from the remote URL
+    set -l remote_url (git remote get-url $remote)
     if test $status -ne 0
         echo "Error: Unable to get remote URL."
         return 1
@@ -51,13 +55,8 @@ function git-pr
 
     set -l pr_dir "$repo_root/pr-$pr_num"
 
-    if not git remote | grep -q '^upstream$'
-        echo "Error: 'upstream' remote not found."
-        return 1
-    end
-
-    echo "Fetching PR #$pr_num from upstream..."
-    if not git fetch upstream "pull/$pr_num/head:$pr_branch"
+    echo "Fetching PR #$pr_num from $remote..."
+    if not git fetch $remote "pull/$pr_num/head:$pr_branch"
         echo "Failed to fetch PR #$pr_num"
         return 1
     end
