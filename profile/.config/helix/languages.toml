@@ -61,3 +61,7 @@ name = "hcl"
 formatter = { command = "terraform", args = ["fmt", "-"] }
 auto-format = true
 
+[[language]]
+name = "json"
+formatter = { command = "jq", args = ["."] }
+auto-format = true
