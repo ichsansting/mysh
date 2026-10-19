@@ -61,7 +61,7 @@ command = "terraform-ls"
 args = [ "serve" ]
 
 [language-server.terraform-ls.config.terraform]
-path = "/home/vscode/.config/helix/terraform-editor"
+path = "/home/vscode/.mysh/bin/terraform-editor"
 
 [language-server.terraform-ls.config.experimentalFeatures]
 prefillRequiredFields = true
@@ -69,7 +69,8 @@ prefillRequiredFields = true
 [[language]]
 name = "hcl"
 language-servers = [ "terraform-ls" ]
-formatter = { command = "/home/vscode/.config/helix/terraform-editor", args = ["fmt", "-"] }
+roots = [".terraform", ".terraform.lock.hcl"]
+formatter = { command = "terraform-editor", args = ["fmt", "-"] }
 auto-format = true
 
 [[language]]

@@ -1,0 +1,9 @@
+#!/usr/bin/env fish
+set -gx MISE_DATA_DIR "$HOME/.mysh/mise"
+set -l terraform_version (terraform-version-name)
+or exit $status
+if test -z "$terraform_version"
+    echo 'Unable to resolve the Terraform version for the editor.' >&2
+    exit 1
+end
+exec mise x "terraform@$terraform_version" -- terraform $argv

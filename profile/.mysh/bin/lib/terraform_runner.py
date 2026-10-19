@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import signal
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,15 +48,12 @@ def native_module_sources(configuration):
     return modules
 
 
-def module_sources(directory, ignore_wrapper_overrides=False):
+def module_sources(directory):
     modules = {}
     filenames = sorted([*directory.glob("*.tf"), *directory.glob("*.tf.json")])
     filenames.sort(key=lambda path: path.name in ("override.tf", "override.tf.json")
                    or path.name.endswith(("_override.tf", "_override.tf.json")))
     for filename in filenames:
-        if (ignore_wrapper_overrides and filename.name.startswith(("traveloka_local_", "zzzz_traveloka_roles_"))
-                and filename.name.endswith("_override.tf.json")):
-            continue
         configuration = filename.read_text()
         if filename.name.endswith(".json"):
             module_blocks = json.loads(configuration).get("module", {})
@@ -228,7 +226,68 @@ def write_json_atomically(filename, configuration):
         Path(temporary).unlink(missing_ok=True)
 
 
+def materialize_installed_module(directory):
+    if not directory.is_symlink() or not directory.is_dir():
+        return
+    with tempfile.TemporaryDirectory(prefix=".traveloka-module-", dir=directory.parent) as staging:
+        copied = Path(staging) / "module"
+        shutil.copytree(directory.resolve(), copied, symlinks=True,
+                        ignore=shutil.ignore_patterns(".git", ".terraform", "traveloka_local_*_override.tf.json"))
+        target = os.readlink(directory)
+        directory.unlink()
+        try:
+            os.replace(copied, directory)
+        except OSError:
+            directory.symlink_to(target, target_is_directory=True)
+            raise
+
+
+def materialize_installed_modules(root):
+    data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
+    manifest_path = data_directory / "modules/modules.json"
+    if not manifest_path.is_file():
+        return
+    manifest = json.loads(manifest_path.read_text())
+    for directory in manifest_path.parent.iterdir():
+        materialize_installed_module(directory)
+    installed = {module["Key"]: module for module in manifest["Modules"]}
+    for module in sorted(manifest["Modules"], key=lambda module: module["Key"].count(".")):
+        if not module["Key"] or not module["Source"].startswith(("./", "../")):
+            continue
+        parent_key, _, _ = module["Key"].rpartition(".")
+        parent_directory = root / installed[parent_key]["Dir"]
+        module["Dir"] = os.path.relpath(os.path.abspath(parent_directory / module["Source"]), root)
+    write_json_atomically(manifest_path, manifest)
+    for module in manifest["Modules"]:
+        directory = root / module["Dir"]
+        if not module["Key"] or not directory.resolve().is_relative_to(manifest_path.parent.resolve()):
+            continue
+        # Installed copies must retain the execution sources after transient overrides disappear.
+        sources = {child["Key"].rpartition(".")[2]: {"source": child["Source"]}
+                   for child in manifest["Modules"] if child["Key"].rpartition(".")[0] == module["Key"]}
+        if sources:
+            write_json_atomically(directory / "traveloka_local_installed_override.tf.json", {"module": sources})
+
+
+def set_installed_overrides(root, enabled):
+    data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
+    manifest_path = data_directory / "modules/modules.json"
+    if not manifest_path.is_file():
+        return
+    modules = json.loads(manifest_path.read_text())["Modules"]
+    directories = {root / module["Dir"] for module in modules if module["Key"]}
+    pattern = "*_override.tf.json.disabled" if enabled else "*_override.tf.json"
+    filenames = (filename for directory in directories for filename in directory.glob(pattern))
+    for filename in filenames:
+        if (not filename.parent.resolve().is_relative_to(manifest_path.parent.resolve())
+                or not filename.name.startswith(("traveloka_local_", "zzzz_traveloka_roles_"))):
+            continue
+        name = filename.name.removesuffix(".disabled") if enabled else filename.name + ".disabled"
+        os.replace(filename, filename.with_name(name))
+
+
 def restore_execution_sources(root):
+    set_installed_overrides(root, enabled=True)
     data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
     snapshot_path = data_directory / "traveloka-module-sources.json"
     manifest_path = data_directory / "modules/modules.json"
@@ -247,12 +306,44 @@ def restore_execution_sources(root):
         write_json_atomically(manifest_path, manifest)
 
 
+def editor_module_source(source):
+    address = source.removeprefix("git::")
+    if address.startswith("git@github.com:"):
+        return "git::ssh://git@github.com/" + address.removeprefix("git@github.com:")
+    if address.startswith("github.com/"):
+        package, _, query = address.partition("?")
+        repository, separator, subdirectory = package.partition("//")
+        package = repository.removesuffix(".git") + ".git" + separator + subdirectory
+        return "git::https://" + package + ("?" + query if query else "")
+    return source
+
+
+def publish_installed_module_manifests(root, data_directory, modules):
+    installed_directory = data_directory.resolve()
+    for module in modules:
+        directory = Path(os.path.abspath(root / module["Dir"]))
+        if not module["Key"] or not directory.resolve().is_relative_to(installed_directory):
+            continue
+        prefix = module["Key"] + "."
+        children = [{**child, "Key": child["Key"][len(prefix):],
+                     "Dir": os.path.relpath(root / child["Dir"], directory)}
+                    for child in modules if child["Key"].startswith(prefix)]
+        if not children:
+            continue
+        manifest_path = directory / ".terraform/modules/modules.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        # Terraform LS resolves remote calls against the edited directory's own manifest.
+        write_json_atomically(manifest_path, {"Modules": [{"Key": "", "Source": "", "Dir": "."}, *children]})
+
+
 def publish_editor_sources(root):
     data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
     manifest_path = data_directory / "modules/modules.json"
     if not manifest_path.is_file():
         return
     manifest = json.loads(manifest_path.read_text())
+    # Terraform LS treats override blocks as duplicate declarations, so hide them between commands.
+    set_installed_overrides(root, enabled=False)
     installed = {module["Key"]: module for module in manifest["Modules"]}
     snapshots = {}
     for module in manifest["Modules"]:
@@ -260,8 +351,11 @@ def publish_editor_sources(root):
             continue
         parent_key, _, name = module["Key"].rpartition(".")
         directory = root / installed[parent_key]["Dir"]
-        original = module_sources(directory, ignore_wrapper_overrides=True).get(name)
-        if original is None or original == module["Source"]:
+        original = module_sources(directory).get(name)
+        if original is None:
+            continue
+        original = editor_module_source(original)
+        if original == module["Source"]:
             continue
         snapshots[module["Key"]] = {"Dir": module["Dir"], "original": original, "execution": module["Source"]}
         module["Source"] = original
@@ -269,6 +363,7 @@ def publish_editor_sources(root):
     write_json_atomically(data_directory / "traveloka-module-sources.json", snapshots)
     if snapshots:
         write_json_atomically(manifest_path, manifest)
+    publish_installed_module_manifests(root, data_directory, manifest["Modules"])
 
 
 def modules_need_init(root):
@@ -427,9 +522,12 @@ def main():
                 return status
         return subprocess.call(terraform + arguments)
     finally:
-        for filename in temporary_files:
-            Path(filename).unlink(missing_ok=True)
-        publish_editor_sources(root)
+        try:
+            materialize_installed_modules(root)
+        finally:
+            for filename in temporary_files:
+                Path(filename).unlink(missing_ok=True)
+            publish_editor_sources(root)
 
 
 def terminate(signum, frame):
