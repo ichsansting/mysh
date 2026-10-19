@@ -42,6 +42,9 @@ Only an explicit user instruction may override a global maintainability rule. Te
 - If validation is unavailable or cannot run, report the limitation and commit only when the inspected change is internally consistent.
 - Commit directly to the active branch, including `main` or `master`. Do not create or switch branches merely because it is the default branch.
 - Prefer the smallest commit that leaves the repository valid. Do not accumulate independently valid changes into a large commit, commit broken states, or split tightly coupled changes.
+- For fixes, corrections, or changes of mind to work committed in the same session, amend the relevant commit instead of creating a follow-up fix commit. Keep independent changes in separate commits.
+- When undoing a commit, use `git reset` instead of creating a revert commit. Preserve unrelated commits and uncommitted work; use `--hard` only when explicitly authorized to discard the affected work.
+- Rewriting pushed or shared history, including amendments and resets, requires explicit user approval.
 - Inspect the intended diff first. Never stage or commit unrelated pre-existing changes.
 - Write every commit message with the `caveman-commit` skill, including commits made by subagents.
 - If an explicit repository workflow requires one large, squashed, or batched commit, tell the user before deviating from the small-commit default.
