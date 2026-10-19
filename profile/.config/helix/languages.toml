@@ -56,9 +56,20 @@ language-servers = ["ty", "ruff-lsp"]
 formatter = { command = "ruff", args = ["format", "-"] }
 auto-format = true
 
+[language-server.terraform-ls]
+command = "terraform-ls"
+args = [ "serve" ]
+
+[language-server.terraform-ls.config.terraform]
+path = "/home/vscode/.config/helix/terraform-editor"
+
+[language-server.terraform-ls.config.experimentalFeatures]
+prefillRequiredFields = true
+
 [[language]]
 name = "hcl"
-formatter = { command = "terraform", args = ["fmt", "-"] }
+language-servers = [ "terraform-ls" ]
+formatter = { command = "/home/vscode/.config/helix/terraform-editor", args = ["fmt", "-"] }
 auto-format = true
 
 [[language]]
