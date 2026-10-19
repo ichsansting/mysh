@@ -47,12 +47,15 @@ def native_module_sources(configuration):
     return modules
 
 
-def module_sources(directory):
+def module_sources(directory, ignore_wrapper_overrides=False):
     modules = {}
     filenames = sorted([*directory.glob("*.tf"), *directory.glob("*.tf.json")])
     filenames.sort(key=lambda path: path.name in ("override.tf", "override.tf.json")
                    or path.name.endswith(("_override.tf", "_override.tf.json")))
     for filename in filenames:
+        if (ignore_wrapper_overrides and filename.name.startswith(("traveloka_local_", "zzzz_traveloka_roles_"))
+                and filename.name.endswith("_override.tf.json")):
+            continue
         configuration = filename.read_text()
         if filename.name.endswith(".json"):
             module_blocks = json.loads(configuration).get("module", {})
@@ -215,6 +218,59 @@ def module_sources_match(configured, installed):
     return configured == installed
 
 
+def write_json_atomically(filename, configuration):
+    descriptor, temporary = tempfile.mkstemp(dir=filename.parent)
+    try:
+        with os.fdopen(descriptor, "w") as destination:
+            json.dump(configuration, destination)
+        os.replace(temporary, filename)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def restore_execution_sources(root):
+    data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
+    snapshot_path = data_directory / "traveloka-module-sources.json"
+    manifest_path = data_directory / "modules/modules.json"
+    if not snapshot_path.is_file() or not manifest_path.is_file():
+        return
+    snapshots = json.loads(snapshot_path.read_text())
+    manifest = json.loads(manifest_path.read_text())
+    changed = False
+    for module in manifest["Modules"]:
+        snapshot = snapshots.get(module["Key"])
+        if snapshot is None or module["Dir"] != snapshot["Dir"] or module["Source"] != snapshot["original"]:
+            continue
+        module["Source"] = snapshot["execution"]
+        changed = True
+    if changed:
+        write_json_atomically(manifest_path, manifest)
+
+
+def publish_editor_sources(root):
+    data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
+    manifest_path = data_directory / "modules/modules.json"
+    if not manifest_path.is_file():
+        return
+    manifest = json.loads(manifest_path.read_text())
+    installed = {module["Key"]: module for module in manifest["Modules"]}
+    snapshots = {}
+    for module in manifest["Modules"]:
+        if not module["Key"]:
+            continue
+        parent_key, _, name = module["Key"].rpartition(".")
+        directory = root / installed[parent_key]["Dir"]
+        original = module_sources(directory, ignore_wrapper_overrides=True).get(name)
+        if original is None or original == module["Source"]:
+            continue
+        snapshots[module["Key"]] = {"Dir": module["Dir"], "original": original, "execution": module["Source"]}
+        module["Source"] = original
+    # Save execution sources first, so an interrupted publication remains recoverable.
+    write_json_atomically(data_directory / "traveloka-module-sources.json", snapshots)
+    if snapshots:
+        write_json_atomically(manifest_path, manifest)
+
+
 def modules_need_init(root):
     data_directory = root / (os.environ.get("TF_DATA_DIR") or ".terraform")
     try:
@@ -337,6 +393,7 @@ def main():
     temporary_files = []
     routing = None
     try:
+        restore_execution_sources(root)
         for directory, configuration in overrides.items():
             descriptor, filename = tempfile.mkstemp(prefix="traveloka_local_", suffix="_override.tf.json", dir=directory)
             temporary_files.append(filename)
@@ -372,6 +429,7 @@ def main():
     finally:
         for filename in temporary_files:
             Path(filename).unlink(missing_ok=True)
+        publish_editor_sources(root)
 
 
 def terminate(signum, frame):
