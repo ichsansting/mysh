@@ -1,5 +1,6 @@
 # Saved commands for Atuin; add one quoted command per line.
 set -g atuin_snippets \
+    'cds -IL' \
     'terraform init -backend-config var-stg-backend.tfvars' \
     'terraform init -backend-config var-prod-backend.tfvars' \
     'terraform plan -var-file var-stg.tfvars' \
