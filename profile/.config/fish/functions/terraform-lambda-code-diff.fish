@@ -650,6 +650,28 @@ def walk(module):
     for child in module.get("child_modules", []):
         yield from walk(child)
 
+def resolve_archive(archive, address):
+    from pathlib import Path
+    import os
+    import re
+
+    if Path(archive).is_file():
+        return archive
+    module_directory = Path(os.environ.get("TF_DATA_DIR") or ".terraform") / "modules"
+    manifest = json.loads((module_directory / "modules.json").read_text(encoding="utf-8"))
+    installed = {module["Key"]: module["Dir"] for module in manifest["Modules"]}
+    ancestors = re.findall(r"(?:^|\.)module\.([^.[\]]+)(?:\[[^\]]+\])?", address)
+    for depth in range(len(ancestors), 0, -1):
+        key = ".".join(ancestors[:depth])
+        if key not in installed:
+            continue
+        try:
+            relative = Path(archive).relative_to(module_directory / key)
+        except ValueError:
+            continue
+        return str(Path(installed[key]) / relative)
+    return archive
+
 state = json.load(open(sys.argv[1], encoding="utf-8"))
 root = state.get("values", {}).get("root_module", {})
 resources = []
@@ -664,9 +686,10 @@ for resource in walk(root):
         print(f"Skipped {address}: no local filename (S3 or image).", file=sys.stderr)
         continue
     try:
+        archive = resolve_archive(archive, address)
         with open(archive, "rb") as source:
             digest = hashlib.file_digest(source, "sha256").digest()
-    except OSError as error:
+    except (OSError, ValueError) as error:
         print(f"Local archive for {address} was not readable: {error}", file=sys.stderr)
         sys.exit(2)
     resources.append({
@@ -680,7 +703,7 @@ for resource in walk(root):
 json.dump({"resources": resources}, sys.stdout)
 ' "$state_json" >"$parsed_plan"
     or begin
-        echo 'Error: the Terraform state could not be read.' >&2
+        echo 'Error: Lambda archives from Terraform state could not be prepared.' >&2
         return 2
     end
 end
