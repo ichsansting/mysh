@@ -9,4 +9,5 @@ set -g atuin_snippets \
     'terraform plan -var-file var-prod.tfvars --override' \
     'terraform apply -var-file var-stg.tfvars' \
     'terraform apply -var-file var-prod.tfvars' \
-    'terraform apply -var-file var-prod.tfvars --override'
+    'terraform apply -var-file var-prod.tfvars --override' \
+    'terraform-lambda-code-diff --state --full'
