@@ -4,8 +4,10 @@
 function assume --description "granted assume (exports AWS_* into this shell)"
     set -lx MISE_DATA_DIR "$HOME/.mysh/mise"
     # `mise x`, not `mise where`: keeps first use lazily installing granted.
-    set -l dir (path dirname (mise x github:fwdcloudsec/granted -- sh -c 'command -v assumego'))
+    set -l dir (path dirname (mise x github:fwdcloudsec/granted -- sh -c 'command -v granted'))
     or return 1
+    # macOS tarballs (0.40.0) ship no assumego; assume.fish needs it.
+    test -e $dir/assumego; or ln -s granted $dir/assumego
     set -lx PATH $dir $PATH
     source $dir/assume.fish $argv
 end
