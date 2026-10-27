@@ -12,7 +12,6 @@
     "command": "bash \"$HOME/.claude/statusline-command.sh\""
   },
   "enabledPlugins": {
-    "automem@verygoodplugins-mcp-automem": false,
     "diagram-design@diagram-design": true,
     "impeccable@impeccable": false,
     "ponytail@ponytail": true,
@@ -47,13 +46,6 @@
       "source": {
         "source": "github",
         "repo": "sveltejs/ai-tools"
-      },
-      "autoUpdate": true
-    },
-    "verygoodplugins-mcp-automem": {
-      "source": {
-        "source": "github",
-        "repo": "verygoodplugins/mcp-automem"
       },
       "autoUpdate": true
     },
