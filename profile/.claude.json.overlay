@@ -1,6 +1,19 @@
 {
   "hasCompletedOnboarding": true,
   "mcpServers": {
+    "aws-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-proxy-for-aws-cli@latest",
+        "https://aws-mcp.ap-southeast-1.api.aws/mcp",
+        "--metadata",
+        "AWS_REGION=ap-southeast-1"
+      ],
+      "env": {
+        "AWS_MCP_PROXY_PROFILES": "DeployerExt@tvlk-fpr-stg ReadOnly@tvlk-fpr-prod SuperAdmin@tvlk-fpr-dev"
+      }
+    },
     "astro-docs": {
       "type": "http",
       "url": "https://mcp.docs.astro.build/mcp"
