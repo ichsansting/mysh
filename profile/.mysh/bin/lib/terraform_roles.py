@@ -213,13 +213,6 @@ def snapshot(package, cache_directory, rules):
     return destination
 
 
-def inherited_providers(configuration):
-    names = set(configuration["required_providers"])
-    for kind in ("resource", "data"):
-        names.update(resource_type.split("_", 1)[0] for resource_type in configuration[kind])
-    return {name: name for name in names}
-
-
 def module_override(node, root, copies, data_directory, cache_directory):
     configuration = node["configuration"]
     override = {}
@@ -231,7 +224,7 @@ def module_override(node, root, copies, data_directory, cache_directory):
         child_source = generate_module(child, root, copies, data_directory, cache_directory)
         settings = configuration["module"][name]
         mappings = {name: reference(provider) for name, provider in
-                    settings.get("providers", inherited_providers(child["configuration"])).items()}
+                    settings.get("providers", {provider: provider for provider, _ in child["needed"]}).items()}
         for provider, resource_type in child["needed"]:
             source = reference(mappings.get(provider, provider))
             mappings[routed_reference(provider, resource_type)] = routed_reference(source, resource_type)
