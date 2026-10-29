@@ -12,8 +12,8 @@
 #   of these two standard profiles and a manual file selects the other environment,
 #   assume the other standard profile. Keep any custom profile's credentials,
 #   including when a manual file selects a different environment.
-# - Missing backend or variable files required by the command cause an error
-#   rather than silently using another file.
+# - Add default backend and variable files only when they exist. Skip automatic
+#   role assumption when neither selected file exists; explicit options pass through.
 # - Recognize staging/stg and production/prod directories, including their
 #   subdirectories. Detect the environment from the original working directory;
 #   a leading -chdir changes where Terraform reads files, not the environment.
@@ -47,23 +47,40 @@
 #   copied per working directory; normal runs restore the original module sources.
 # - Only --override runs need uv/python-hcl2/PyYAML; normal runs use Python directly.
 # Checks: fish --no-execute terraform
+# Checks: python3 -B -m unittest discover -s tests -v
 # Checks: uv run --no-project --with 'python-hcl2>=8,<9' --with 'PyYAML>=6,<7' python -B -m unittest -v test_terraform.py test_terraform_roles.py
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
 
 set environment stg
 set argument_environment ""
-set expects_file 0
+set configuration_directory "$PWD"
+if set -q argv[1]; and string match -q -- '-chdir=*' "$argv[1]"
+    set configuration_directory (string split --max 1 '=' -- "$argv[1]")[2]
+end
+set backend_files
+set variable_files
+set expects_file ""
 for arg in $argv
     set filename ""
-    if test "$expects_file" = 1
+    set file_option "$expects_file"
+    if test -n "$expects_file"
         set filename "$arg"
-        set expects_file 0
+        set expects_file ""
     end
     switch $arg
         case '-var-file' '-backend-config'
-            set expects_file 1
+            set expects_file "$arg"
         case '-var-file=*' '-backend-config=*'
             set filename (string split --max 1 '=' -- "$arg")[2]
+            set file_option (string split --max 1 '=' -- "$arg")[1]
+    end
+    if test -n "$filename"
+        switch "$file_option"
+            case '-backend-config'
+                set -a backend_files "$filename"
+            case '-var-file'
+                set -a variable_files "$filename"
+        end
     end
     switch "$filename"
         case '*prod*.tfvars'
@@ -94,6 +111,23 @@ else
     end
 end
 
+if not set -q backend_files[1]
+    set backend_files "var-$environment-backend.tfvars"
+end
+if not set -q variable_files[1]
+    set variable_files "var-$environment.tfvars"
+end
+set has_tfvars 0
+for filename in $backend_files $variable_files
+    if not string match -q -- '/*' "$filename"
+        set filename "$configuration_directory/$filename"
+    end
+    if test -f "$filename"
+        set has_tfvars 1
+        break
+    end
+end
+
 set target_profile "DeployerExt@tvlk-fpr-$environment"
 set needs_assume 0
 if test -z "$AWS_PROFILE"
@@ -102,7 +136,7 @@ else if contains -- "$AWS_PROFILE" 'DeployerExt@tvlk-fpr-stg' 'DeployerExt@tvlk-
     set needs_assume 1
 end
 
-if not set -q TF_ASSUME_WRAPPED; and test "$needs_assume" = 1
+if not set -q TF_ASSUME_WRAPPED; and test "$needs_assume" = 1; and test "$has_tfvars" = 1
     set -x TF_ASSUME_WRAPPED 1
     set terraform_command (string join ' ' -- terraform (string escape -- $argv))
     assume "$target_profile" -x --exec "$terraform_command"

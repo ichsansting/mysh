@@ -476,11 +476,10 @@ def main():
         # Saved plans already contain their variables.
         if command == "apply" and apply_uses_saved_plan(command_arguments[1:]):
             default_option = None
-        if default_option:
+        if default_option and (root / default_option.split("=", 1)[1]).is_file():
             arguments.insert(2 if arguments[0].startswith("-chdir=") else 1, default_option)
     backend_file = f"var-{environment}-backend.tfvars" if environment else None
-    if (backend_file is not None and command not in ("init", "plan", "apply")
-            and not (root / backend_file).is_file()):
+    if backend_file is not None and not (root / backend_file).is_file():
         backend_file = None
     backend_changed = (command not in ("init", "get") and backend_file is not None
                        and backend_needs_init(root, backend_file))
