@@ -33,6 +33,7 @@ Only an explicit user instruction may override a global maintainability rule. Te
 - Prefer dedicated read-only search, file, and language-server tools over broad shell pipelines.
 - Make targeted edits anchored to unique existing content or symbols; do not rewrite large unchanged sections for a small alteration.
 - After each coherent change, run the narrowest relevant validation. Run broader checks before completion when practical.
+- Use Floci to emulate cloud services for local integration tests where supported. Configure tests to use its local endpoints and report any coverage gaps caused by unsupported services or behavior.
 - Name the checks run. Report failed or skipped checks explicitly; never imply that unrun checks passed.
 - Clone repositories lean by default: `git clone --filter=blob:none --sparse <url>`. Widen with `git sparse-checkout set <dirs>`; run `git sparse-checkout disable` only when the full tree is needed.
 
