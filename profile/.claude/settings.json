@@ -18,7 +18,8 @@
     "svelte@svelte": false,
     "typescript-lsp@claude-plugins-official": false,
     "cloudflare@cloudflare": false,
-    "mattpocock-skills@mattpocock": true
+    "mattpocock-skills@mattpocock": true,
+    "context-mode@context-mode": true
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
@@ -59,6 +60,12 @@
       "source": {
         "source": "github",
         "repo": "mattpocock/skills"
+      }
+    },
+    "context-mode": {
+      "source": {
+        "source": "github",
+        "repo": "mksglu/context-mode"
       }
     }
   },
