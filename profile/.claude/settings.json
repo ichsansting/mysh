@@ -19,7 +19,7 @@
     "typescript-lsp@claude-plugins-official": false,
     "cloudflare@cloudflare": false,
     "mattpocock-skills@mattpocock": true,
-    "context-mode@context-mode": false
+    "context-mode@context-mode": true
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
@@ -83,5 +83,17 @@
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/context-mode-cache-heal.mjs\""
+          }
+        ]
+      }
+    ]
+  }
 }
