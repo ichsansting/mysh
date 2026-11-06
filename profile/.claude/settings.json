@@ -19,7 +19,7 @@
     "typescript-lsp@claude-plugins-official": false,
     "cloudflare@cloudflare": false,
     "mattpocock-skills@mattpocock": true,
-    "context-mode@context-mode": true
+    "context-mode@context-mode": false
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
