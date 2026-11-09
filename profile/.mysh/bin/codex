@@ -1,3 +1,12 @@
 #!/usr/bin/env fish
 set -x MISE_DATA_DIR "$HOME/.mysh/mise"
-exec mise x codex -- codex --profile local $argv
+
+# --profile hanya diterima perintah runtime; selain itu codex menolaknya.
+set -l subcommand "$argv[1]"
+test "$subcommand" = debug; and set subcommand "debug $argv[2]"
+set -l runtime_commands exec review resume queue archive delete unarchive fork mcp migrate-nfs-db sandbox "debug prompt-input"
+
+if test -z "$subcommand"; or contains -- "$subcommand" $runtime_commands; or string match -q -- '-*' "$subcommand"
+    exec mise x codex -- codex --profile local $argv
+end
+exec mise x codex -- codex $argv
