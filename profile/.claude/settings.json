@@ -4,6 +4,18 @@
     "pr": "",
     "sessionUrl": false
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/context-mode-cache-heal.mjs\""
+          }
+        ]
+      }
+    ]
+  },
   "enableArtifact": false,
   "enableWorkflows": false,
   "workflowKeywordTriggerEnabled": false,
@@ -19,7 +31,11 @@
     "typescript-lsp@claude-plugins-official": false,
     "cloudflare@cloudflare": false,
     "mattpocock-skills@mattpocock": true,
-    "context-mode@context-mode": true
+    "context-mode@context-mode": true,
+    "cc-plugin-telemetry@builtin": false,
+    "cc-plugin-plugin-authoring@builtin": false,
+    "cc-plugin-diff@builtin": false,
+    "cc-plugin-agents-md@builtin": false
   },
   "extraKnownMarketplaces": {
     "diagram-design": {
@@ -83,17 +99,5 @@
   "switchModelsOnFlag": false,
   "autoContinueAtUsageLimit": false,
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true,
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$HOME/.claude/hooks/context-mode-cache-heal.mjs\""
-          }
-        ]
-      }
-    ]
-  }
+  "agentPushNotifEnabled": true
 }
