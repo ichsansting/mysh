@@ -27,7 +27,7 @@ class ModulesNotInstalled(ValueError):
 
 
 def load_rules(filename=None):
-    filename = filename or Path(__file__).with_name("terraform_override_rules.yaml")
+    filename = filename or os.environ.get("TRAVELOKA_TERRAFORM_ROLE_RULES") or Path(__file__).with_name("terraform_override_rules.yaml")
     try:
         document = yaml.safe_load(Path(filename).read_text())
     except yaml.YAMLError:

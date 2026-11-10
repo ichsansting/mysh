@@ -45,6 +45,7 @@
 # - Role routing is opt-in with --override (consumed by the runner).
 #   Rules live in lib/terraform_override_rules.yaml. Affected module packages are
 #   copied per working directory; normal runs restore the original module sources.
+#   TRAVELOKA_TERRAFORM_ROLE_RULES selects a rules file for one invocation.
 # - Only --override runs need uv/python-hcl2/PyYAML; normal runs use Python directly.
 # Checks: fish --no-execute terraform
 # Checks: python3 -B -m unittest discover -s tests -v
