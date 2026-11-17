@@ -451,16 +451,42 @@ def role_overrides(root, environment, overrides):
     return configured_role_overrides(root, environment, overrides)
 
 
+def docker_terraform(version, root):
+    working_directory = Path.cwd().resolve()
+    home = Path.home()
+    command = ["docker", "run", "--rm", "--platform", "linux/amd64",
+               "--user", f"{os.getuid()}:{os.getgid()}", "-w", str(working_directory),
+               "-e", f"HOME={home}"]
+    mounts = {working_directory, root, home / ".terraform.d", home / ".aws"}
+    for name in ("TF_DATA_DIR", "TF_PLUGIN_CACHE_DIR", "TF_CLI_CONFIG_FILE",
+                 "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_CA_BUNDLE"):
+        if os.environ.get(name):
+            path = Path(os.environ[name]).expanduser().resolve()
+            mounts.add(path if path.is_dir() else path.parent)
+    for directory in sorted(mounts):
+        if directory.is_dir():
+            command.extend(["-v", f"{directory}:{directory}"])
+    terraformrc = home / ".terraformrc"
+    if terraformrc.is_file():
+        command.extend(["-v", f"{terraformrc}:{terraformrc}:ro"])
+    for name in os.environ:
+        if name.startswith(("AWS_", "TF_", "DD_", "DATADOG_")) or name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
+            command.extend(["-e", name])
+    return [*command, f"hashicorp/terraform:{version}"]
+
+
 def main():
     version, environment, *arguments = sys.argv[1:]
     use_role_overrides = "--override" in arguments
-    arguments = [argument for argument in arguments if argument != "--override"]
+    use_docker_amd64 = "--docker-amd64" in arguments
+    arguments = [argument for argument in arguments if argument not in ("--override", "--docker-amd64")]
     root = Path.cwd()
     command_arguments = arguments[:]
     if command_arguments and command_arguments[0].startswith("-chdir="):
         root = (root / command_arguments.pop(0).split("=", 1)[1]).resolve()
     command = command_arguments[0] if command_arguments else ""
-    terraform = ["mise", "x", f"terraform@{version}", "--", "terraform"]
+    terraform = (docker_terraform(version, root) if use_docker_amd64
+                 else ["mise", "x", f"terraform@{version}", "--", "terraform"])
     configuration_commands = {"init", "get", "plan", "apply", "destroy", "validate",
                               "console", "import", "refresh", "graph", "test", "providers", "show"}
     uses_configuration = command in configuration_commands or command_arguments[:2] == ["state", "show"]

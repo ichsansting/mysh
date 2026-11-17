@@ -47,6 +47,7 @@
 #   copied per working directory; normal runs restore the original module sources.
 #   TRAVELOKA_TERRAFORM_ROLE_RULES selects a rules file for one invocation.
 # - Only --override runs need uv/python-hcl2/PyYAML; normal runs use Python directly.
+# - --docker-amd64 runs the selected Terraform version as linux/amd64 in Docker.
 # Checks: fish --no-execute terraform
 # Checks: python3 -B -m unittest discover -s tests -v
 # Checks: uv run --no-project --with 'python-hcl2>=8,<9' --with 'PyYAML>=6,<7' python -B -m unittest -v test_terraform.py test_terraform_roles.py
@@ -139,9 +140,25 @@ end
 
 if not set -q TF_ASSUME_WRAPPED; and test "$needs_assume" = 1; and test "$has_tfvars" = 1
     set -x TF_ASSUME_WRAPPED 1
-    set terraform_command (string join ' ' -- terraform (string escape -- $argv))
-    assume "$target_profile" -x --exec "$terraform_command"
-    exit $status
+    set status_file (mktemp)
+    or exit $status
+    set exec_script (mktemp)
+    or exit $status
+    printf '%s\n' '#!/bin/sh' 'terraform "$@"' 'code=$?' 'printf "%s" "$code" > "$TF_WRAPPER_STATUS_FILE"' 'exit "$code"' > "$exec_script"
+    chmod 700 "$exec_script"
+    set -x TF_WRAPPER_STATUS_FILE "$status_file"
+    set terraform_command (string join ' ' -- (string escape -- "$exec_script" $argv))
+    set assume_command (string join ' ' -- assume (string escape -- "$target_profile" '-x' '--exec' "$terraform_command"))
+    fish -c "$assume_command"
+    set assume_status $status
+    rm -f "$exec_script"
+    if test -s "$status_file"
+        set terraform_status (cat "$status_file")
+        rm -f "$status_file"
+        exit $terraform_status
+    end
+    rm -f "$status_file"
+    exit $assume_status
 end
 
 set terraform_version (terraform-version-name)
