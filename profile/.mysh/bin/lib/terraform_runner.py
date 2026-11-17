@@ -471,7 +471,7 @@ def write_docker_credentials(profiles, directory):
 def docker_terraform(version, root, credentials_directory=None):
     working_directory = Path.cwd().resolve()
     home = Path.home()
-    command = ["docker", "run", "--rm", "--platform", "linux/amd64",
+    command = ["docker", "run", "--rm", "-i", "--platform", "linux/amd64",
                "--user", f"{os.getuid()}:{os.getgid()}", "-w", str(working_directory),
                "-e", f"HOME={home}"]
     mounts = {working_directory, root, home / ".terraform.d", home / ".aws"}
