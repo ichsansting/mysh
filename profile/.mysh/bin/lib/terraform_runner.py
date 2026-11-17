@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from configparser import RawConfigParser
 from functools import cache
 import hashlib
 import json
@@ -451,7 +452,23 @@ def role_overrides(root, environment, overrides):
     return configured_role_overrides(root, environment, overrides)
 
 
-def docker_terraform(version, root):
+def write_docker_credentials(profiles, directory):
+    credentials = RawConfigParser()
+    for profile in sorted(profiles):
+        exported = subprocess.check_output(
+            ["aws", "configure", "export-credentials", "--profile", profile, "--format", "process"],
+            text=True,
+        )
+        identity = json.loads(exported)
+        credentials[profile] = {"aws_access_key_id": identity["AccessKeyId"],
+                                "aws_secret_access_key": identity["SecretAccessKey"],
+                                "aws_session_token": identity["SessionToken"]}
+    filename = directory / "credentials"
+    with os.fdopen(os.open(filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as destination:
+        credentials.write(destination)
+
+
+def docker_terraform(version, root, credentials_directory=None):
     working_directory = Path.cwd().resolve()
     home = Path.home()
     command = ["docker", "run", "--rm", "--platform", "linux/amd64",
@@ -472,6 +489,10 @@ def docker_terraform(version, root):
     for name in os.environ:
         if name.startswith(("AWS_", "TF_", "DD_", "DATADOG_")) or name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
             command.extend(["-e", name])
+    if credentials_directory is not None:
+        command.extend(["-v", f"{credentials_directory}:{credentials_directory}:ro",
+                        "-e", f"AWS_SHARED_CREDENTIALS_FILE={credentials_directory / 'credentials'}",
+                        "-e", "AWS_CONFIG_FILE=/dev/null"])
     return [*command, f"hashicorp/terraform:{version}"]
 
 
@@ -511,6 +532,7 @@ def main():
                        and backend_needs_init(root, backend_file))
     overrides = local_overrides(root, modules_upgrade_requested(command, command_arguments[1:]))
     temporary_files = []
+    docker_credentials = None
     routing = None
     try:
         restore_execution_sources(root)
@@ -531,6 +553,16 @@ def main():
                     return status
                 routing = role_overrides(root, environment, overrides)
             if routing:
+                if use_docker_amd64:
+                    PLUGIN_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                    docker_credentials = tempfile.TemporaryDirectory(
+                        prefix="terraform-docker-credentials-", dir=PLUGIN_CACHE.parent,
+                    )
+                    profiles = {provider["profile"] for provider in routing["provider"]["aws"]}
+                    if os.environ.get("AWS_PROFILE"):
+                        profiles.add(os.environ["AWS_PROFILE"])
+                    write_docker_credentials(profiles, Path(docker_credentials.name))
+                    terraform = docker_terraform(version, root, Path(docker_credentials.name))
                 descriptor, filename = tempfile.mkstemp(prefix="traveloka_roles_", suffix=".tf.json", dir=root)
                 temporary_files.append(filename)
                 with os.fdopen(descriptor, "w") as provider_configuration:
@@ -550,6 +582,8 @@ def main():
         try:
             materialize_installed_modules(root)
         finally:
+            if docker_credentials is not None:
+                docker_credentials.cleanup()
             for filename in temporary_files:
                 Path(filename).unlink(missing_ok=True)
             publish_editor_sources(root)
