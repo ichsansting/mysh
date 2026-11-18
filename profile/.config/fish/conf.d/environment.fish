@@ -9,3 +9,6 @@ set -gx EDITOR hx
 set -gx VISUAL hx
 set -gx PAGER bat
 set -gx MANPAGER "bat -l man -p"
+
+# brew
+set -gx HOMEBREW_CASK_OPTS "--appdir=$HOME/Applications"

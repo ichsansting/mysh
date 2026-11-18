@@ -468,6 +468,21 @@ def write_docker_credentials(profiles, directory):
         credentials.write(destination)
 
 
+def ensure_docker_image(version):
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", version):
+        raise ValueError(f"Invalid Terraform version: {version}")
+    image = f"local/terraform-aws:{version}-amd64"
+    installed = subprocess.run(["docker", "image", "inspect", image],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if installed.returncode:
+        dockerfile = ("FROM ghcr.io/traveloka/github-actions-terraform-ci-cd-image:latest\n"
+                      f"COPY --from=hashicorp/terraform:{version} /bin/terraform /opt/terraform/terraform\n"
+                      'ENTRYPOINT ["/opt/terraform/terraform"]\n')
+        subprocess.run(["docker", "build", "--platform", "linux/amd64", "-t", image, "-"],
+                       input=dockerfile, text=True, check=True)
+    return image
+
+
 def docker_terraform(version, root, credentials_directory=None):
     working_directory = Path.cwd().resolve()
     home = Path.home()
@@ -493,7 +508,7 @@ def docker_terraform(version, root, credentials_directory=None):
         command.extend(["-v", f"{credentials_directory}:{credentials_directory}:ro",
                         "-e", f"AWS_SHARED_CREDENTIALS_FILE={credentials_directory / 'credentials'}",
                         "-e", "AWS_CONFIG_FILE=/dev/null"])
-    return [*command, f"hashicorp/terraform:{version}"]
+    return [*command, f"local/terraform-aws:{version}-amd64"]
 
 
 def main():
@@ -506,8 +521,11 @@ def main():
     if command_arguments and command_arguments[0].startswith("-chdir="):
         root = (root / command_arguments.pop(0).split("=", 1)[1]).resolve()
     command = command_arguments[0] if command_arguments else ""
-    terraform = (docker_terraform(version, root) if use_docker_amd64
-                 else ["mise", "x", f"terraform@{version}", "--", "terraform"])
+    if use_docker_amd64:
+        ensure_docker_image(version)
+        terraform = docker_terraform(version, root)
+    else:
+        terraform = ["mise", "x", f"terraform@{version}", "--", "terraform"]
     configuration_commands = {"init", "get", "plan", "apply", "destroy", "validate",
                               "console", "import", "refresh", "graph", "test", "providers", "show"}
     uses_configuration = command in configuration_commands or command_arguments[:2] == ["state", "show"]
