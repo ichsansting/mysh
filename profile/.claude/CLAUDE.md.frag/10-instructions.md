@@ -41,7 +41,8 @@ Only an explicit user instruction may override a global maintainability rule. Te
 
 - Commit each self-contained change automatically after running all relevant validation that is available and practical; commits need no user approval.
 - If validation is unavailable or cannot run, report the limitation and commit only when the inspected change is internally consistent.
-- Commit directly to the active branch, including `main` or `master`. Do not create or switch branches merely because it is the default branch.
+- Commit directly to the active branch, including `main` or `master`, except for PR work. Do not create or switch branches merely because it is the default branch.
+- When asked to create a PR, create its branch and worktree with `wt switch --create <branch>`. Use `wt list` to find merged worktrees, and remove clean ones with `wt remove <branch>`.
 - Prefer the smallest commit that leaves the repository valid. Do not accumulate independently valid changes into a large commit, commit broken states, or split tightly coupled changes.
 - For fixes, corrections, or changes of mind to work committed in the same session, amend the relevant commit. If the commit was pushed or shared, prepare and validate the correction, then request explicit approval to amend and rewrite the history; do not create a follow-up commit as a workaround. Keep independent changes in separate commits.
 - When undoing a commit, use `git reset` instead of creating a revert commit. Preserve unrelated commits and uncommitted work; use `--hard` only when explicitly authorized to discard the affected work.
