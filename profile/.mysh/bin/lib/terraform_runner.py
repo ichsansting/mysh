@@ -486,11 +486,12 @@ def ensure_docker_image(version):
 def docker_terraform(version, root, credentials_directory=None):
     working_directory = Path.cwd().resolve()
     home = Path.home()
+    docker_plugin_cache = home / ".terraform.d/plugin-cache-docker-amd64"
     command = ["docker", "run", "--rm", "-i", "--platform", "linux/amd64",
                "--user", f"{os.getuid()}:{os.getgid()}", "-w", str(working_directory),
                "-e", f"HOME={home}"]
     mounts = {working_directory, root, home / ".terraform.d", home / ".aws"}
-    for name in ("TF_DATA_DIR", "TF_PLUGIN_CACHE_DIR", "TF_CLI_CONFIG_FILE",
+    for name in ("TF_DATA_DIR", "TF_CLI_CONFIG_FILE",
                  "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_CA_BUNDLE"):
         if os.environ.get(name):
             path = Path(os.environ[name]).expanduser().resolve()
@@ -502,8 +503,11 @@ def docker_terraform(version, root, credentials_directory=None):
     if terraformrc.is_file():
         command.extend(["-v", f"{terraformrc}:{terraformrc}:ro"])
     for name in os.environ:
+        if name == "TF_PLUGIN_CACHE_DIR":
+            continue
         if name.startswith(("AWS_", "TF_", "DD_", "DATADOG_")) or name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
             command.extend(["-e", name])
+    command.extend(["-e", f"TF_PLUGIN_CACHE_DIR={docker_plugin_cache}"])
     if credentials_directory is not None:
         command.extend(["-v", f"{credentials_directory}:{credentials_directory}:ro",
                         "-e", f"AWS_SHARED_CREDENTIALS_FILE={credentials_directory / 'credentials'}",
